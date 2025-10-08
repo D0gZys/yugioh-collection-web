@@ -21,6 +21,16 @@ export default async function Home() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-900 via-purple-900 to-indigo-900">
       <div className="container mx-auto px-4 py-8">
+        {/* Navigation */}
+        <nav className="flex justify-end mb-6">
+          <Link 
+            href="/convertisseur" 
+            className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2"
+          >
+            🔄 Convertisseur
+          </Link>
+        </nav>
+
         {/* Header */}
         <header className="text-center mb-12">
           <h1 className="text-5xl font-bold text-white mb-4">
