@@ -1,0 +1,76 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Modèle pour les séries Yu-Gi-Oh (adapté de ta structure existante)
+model Series {
+  id            Int       @id @default(autoincrement())
+  codeSerie     String    @unique @map("code_serie") @db.VarChar(10)
+  nomSerie      String    @map("nom_serie") @db.VarChar(100)
+  urlSource     String?   @map("url_source") @db.Text
+  dateAjout     DateTime  @default(now()) @map("date_ajout")
+  nbCartesTotal Int       @default(0) @map("nb_cartes_total")
+  
+  // Relations
+  cartes        Carte[]
+  
+  @@map("series")
+}
+
+// Modèle pour les cartes Yu-Gi-Oh
+model Carte {
+  id          Int       @id @default(autoincrement())
+  numeroCarte String    @map("numero_carte") @db.VarChar(20)
+  nomCarte    String    @map("nom_carte") @db.VarChar(200)
+  serieId     Int       @map("serie_id")
+  dateAjout   DateTime  @default(now()) @map("date_ajout")
+  
+  // Relations
+  serie       Series    @relation(fields: [serieId], references: [id], onDelete: Cascade)
+  carteRaretes CarteRarete[]
+  
+  @@map("cartes")
+}
+
+// Modèle pour les raretés
+model Rarete {
+  id          Int     @id @default(autoincrement())
+  nomRarete   String  @map("nom_rarete") @db.VarChar(50)
+  ordreTri    Int     @default(0) @map("ordre_tri")
+  
+  // Relations
+  carteRaretes CarteRarete[]
+  
+  @@map("raretes")
+}
+
+// Modèle pour la gestion de collection (relation carte-rareté + possession)
+model CarteRarete {
+  id              Int       @id @default(autoincrement())
+  carteId         Int       @map("carte_id")
+  rareteId        Int       @map("rarete_id")
+  possedee        Boolean   @default(false)
+  dateAcquisition DateTime? @map("date_acquisition") @db.Date
+  condition       String    @default("NM") @db.VarChar(20)
+  prixAchat       Decimal?  @map("prix_achat") @db.Decimal(10,2)
+  notes           String?   @db.Text
+  
+  // Relations
+  carte           Carte     @relation(fields: [carteId], references: [id], onDelete: Cascade)
+  rarete          Rarete    @relation(fields: [rareteId], references: [id], onDelete: Cascade)
+  
+  @@map("carte_raretes")
+  @@unique([carteId, rareteId])
+}
