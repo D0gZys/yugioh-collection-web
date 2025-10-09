@@ -1,5 +1,31 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Configuration de la base de données
+
+### 1. Configuration de l'environnement
+```bash
+# Copiez le fichier d'exemple
+cp .env.example .env
+# Modifiez le fichier .env avec vos paramètres de base de données
+```
+
+### 2. Installation de PostgreSQL
+- **Windows**: Téléchargez et installez PostgreSQL depuis [postgresql.org](https://www.postgresql.org/download/windows/)
+- **macOS**: `brew install postgresql@15 && brew services start postgresql@15`
+- **Linux**: `sudo apt-get install postgresql postgresql-contrib` (Ubuntu/Debian)
+
+### 3. Création de la base de données
+```bash
+# Créez la base de données
+createdb yugioh_collection
+
+# Générez le client Prisma
+npx prisma generate
+
+# Appliquez le schéma à la base de données
+npx prisma db push
+```
+
 ## Getting Started
 
 First, run the development server:
