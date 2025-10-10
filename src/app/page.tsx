@@ -3,20 +3,40 @@ import Link from 'next/link';
 
 const prisma = new PrismaClient();
 
-export default async function Home() {
-  // Récupérer toutes les séries avec le nombre de cartes
-  const series = await prisma.series.findMany({
-    include: {
-      _count: {
-        select: { cartes: true }
-      }
-    },
-    orderBy: {
-      nomSerie: 'asc'
-    }
-  });
+type SeriesWithCount = {
+  id: number;
+  codeSerie: string;
+  nomSerie: string;
+  urlSource: string | null;
+  dateAjout: Date;
+  nbCartesTotal: number;
+  _count: {
+    cartes: number;
+  };
+};
 
-  await prisma.$disconnect();
+export default async function Home() {
+  let series: SeriesWithCount[] = [];
+  let hasDbError = false;
+
+  try {
+    // Récupérer toutes les séries avec le nombre de cartes
+    series = await prisma.series.findMany({
+      include: {
+        _count: {
+          select: { cartes: true }
+        }
+      },
+      orderBy: {
+        nomSerie: 'asc'
+      }
+    });
+  } catch (error) {
+    console.error('Erreur de base de données:', error);
+    hasDbError = true;
+  } finally {
+    await prisma.$disconnect();
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-900 via-purple-900 to-indigo-900">
@@ -36,14 +56,35 @@ export default async function Home() {
           <h1 className="text-5xl font-bold text-white mb-4">
             🃏 Ma Collection Yu-Gi-Oh!
           </h1>
-          <p className="text-xl text-blue-200">
-            {series.length} séries • {series.reduce((total, serie) => total + serie._count.cartes, 0)} cartes
-          </p>
+          {hasDbError ? (
+            <div className="text-xl text-red-300 bg-red-900/30 border border-red-500 rounded-lg p-4 mx-auto max-w-md">
+              ⚠️ Erreur de connexion à la base de données
+              <p className="text-sm mt-2">Veuillez vérifier que PostgreSQL est démarré et que les migrations sont appliquées.</p>
+            </div>
+          ) : (
+            <p className="text-xl text-blue-200">
+              {series.length} séries • {series.reduce((total, serie) => total + serie._count.cartes, 0)} cartes
+            </p>
+          )}
         </header>
 
         {/* Grille des séries */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {series.map((serie) => (
+        {hasDbError ? (
+          <div className="text-center text-gray-300">
+            <p className="mb-4">La base de données n'est pas accessible pour le moment.</p>
+            <p className="text-sm text-gray-400">
+              Commandes pour résoudre le problème :
+            </p>
+            <div className="bg-gray-800 rounded-lg p-4 mt-4 text-left max-w-md mx-auto">
+              <code className="text-green-400">
+                npx prisma migrate dev<br />
+                npx prisma generate
+              </code>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {series.map((serie) => (
             <Link key={serie.id} href={`/series/${serie.id}`}>
               <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-6 hover:bg-white/20 transition-all duration-300 cursor-pointer group">
                 <div className="flex justify-between items-start mb-4">
@@ -79,7 +120,8 @@ export default async function Home() {
               </div>
             </Link>
           ))}
-        </div>
+          </div>
+        )}
 
         {/* Footer */}
         <footer className="text-center mt-12 text-gray-400">

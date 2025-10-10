@@ -17,6 +17,8 @@ export default function ConvertisseurPage() {
   const [url, setUrl] = useState('');
   const [extractedCards, setExtractedCards] = useState<Card[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
 
   // Fonction pour extraire les cartes depuis le HTML
   const parseCardsFromHTML = (html: string): Card[] => {
@@ -192,6 +194,132 @@ export default function ConvertisseurPage() {
     }
   };
 
+  // Fonction pour extraire le nom complet de la série depuis l'URL
+  const extractSeriesNameFromUrl = (url: string): string => {
+    if (!url) return '';
+    
+    try {
+      let seriesName = '';
+      
+      if (url.includes('Set_Card_Lists:')) {
+        // Format: "Set_Card_Lists:Battles_of_Legend:_Monster_Mayhem_(TCG-FR)"
+        // Extraire tout ce qui suit "Set_Card_Lists:"
+        const setCardListsIndex = url.indexOf('Set_Card_Lists:');
+        if (setCardListsIndex !== -1) {
+          const afterSetCardLists = url.substring(setCardListsIndex + 'Set_Card_Lists:'.length);
+          // Maintenant on a "Battles_of_Legend:_Monster_Mayhem_(TCG-FR)"
+          // Il faut reconstruire le nom avec les deux-points
+          seriesName = afterSetCardLists;
+        }
+      } else if (url.includes('/wiki/')) {
+        // Format: "https://yugipedia.com/wiki/Battles_of_Legend:_Monster_Mayhem"
+        const wikiPart = url.split('/wiki/')[1];
+        if (wikiPart) {
+          seriesName = wikiPart.split('?')[0]; // Enlever les paramètres de requête
+        }
+      }
+      
+      if (!seriesName) return '';
+      
+      // Nettoyer le nom - attention à préserver les deux-points
+      seriesName = seriesName
+        .replace(/\(TCG-FR\)$/i, '') // Supprimer (TCG-FR) à la fin d'abord
+        .replace(/\(TCG\)$/i, '') // Supprimer (TCG) à la fin
+        .replace(/\(OCG\)$/i, '') // Supprimer (OCG) à la fin
+        .trim() // Supprimer espaces début/fin
+        .replace(/_/g, ' ') // Remplacer underscores par espaces APRÈS avoir supprimé les suffixes
+        .replace(/\s+/g, ' ') // Normaliser les espaces multiples
+        .trim();
+      
+      // Remplacer les caractères encodés
+      seriesName = seriesName
+        .replace(/%3A/g, ':')
+        .replace(/&colon;/g, ':');
+      
+      console.log('🏷️ Nom de série extrait:', `"${seriesName}"`, 'depuis URL:', url);
+      
+      return seriesName || '';
+    } catch (error) {
+      console.error('Erreur extraction nom série:', error);
+      return '';
+    }
+  };
+
+  // Fonction pour sauvegarder la série dans la base de données
+  const handleSaveToDatabase = async () => {
+    if (extractedCards.length === 0) {
+      setSaveMessage({ type: 'error', text: 'Aucune carte à sauvegarder' });
+      return;
+    }
+
+    // Extraire le code de série (4 premiers caractères du premier code de carte)
+    const seriesCode = extractedCards[0]?.code.substring(0, 4);
+    if (!seriesCode) {
+      setSaveMessage({ type: 'error', text: 'Impossible de déterminer le code de série' });
+      return;
+    }
+
+    // Extraire le nom complet de la série depuis l'URL, sinon utiliser le code
+    let seriesName = extractSeriesNameFromUrl(url);
+    if (!seriesName) {
+      seriesName = `Série ${seriesCode}`;
+    }
+    
+    setIsSaving(true);
+    setSaveMessage(null);
+
+    try {
+      console.log('🚀 Début de la sauvegarde:', {
+        seriesCode,
+        seriesName,
+        cardsCount: extractedCards.length,
+        sourceUrl: url
+      });
+
+      const response = await fetch('/api/save-series', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          seriesCode,
+          seriesName,
+          sourceUrl: url,
+          cards: extractedCards
+        }),
+      });
+
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Erreur lors de la sauvegarde');
+      }
+
+      console.log('✅ Sauvegarde réussie:', result);
+      setSaveMessage({ 
+        type: 'success', 
+        text: `Série "${seriesName}" sauvegardée avec succès ! (${result.data.cardsAdded} cartes ajoutées)` 
+      });
+
+      // Optionnel : nettoyer le formulaire après succès
+      // setText('');
+      // setUrl('');
+      // setExtractedCards([]);
+      
+    } catch (error) {
+      console.error('❌ Erreur sauvegarde:', error);
+      setSaveMessage({ 
+        type: 'error', 
+        text: `Erreur: ${error instanceof Error ? error.message : 'Erreur inconnue'}` 
+      });
+    } finally {
+      setIsSaving(false);
+      
+      // Effacer le message après 5 secondes
+      setTimeout(() => setSaveMessage(null), 5000);
+    }
+  };
+
   // Fonction appelée lors du clic sur "Convertir"
   const handleConvert = () => {
     console.log('=== DÉBOGAGE HANDLECONVERT ===');
@@ -337,9 +465,25 @@ export default function ConvertisseurPage() {
         {extractedCards.length > 0 && (
           <div className="max-w-7xl mx-auto mt-8">
             <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-6">
-              <h2 className="text-2xl font-semibold text-white mb-6 flex items-center gap-2">
-                🃏 Cartes extraites ({extractedCards.length})
-              </h2>
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-semibold text-white flex items-center gap-2">
+                  🃏 Cartes extraites ({extractedCards.length})
+                </h2>
+                {extractedCards.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-sm bg-purple-600/30 border border-purple-500 rounded-lg px-3 py-1">
+                      <span className="text-purple-200">Code série:</span>{' '}
+                      <span className="text-white font-semibold">{extractedCards[0]?.code.substring(0, 4)}</span>
+                    </div>
+                    {extractSeriesNameFromUrl(url) && (
+                      <div className="text-sm bg-blue-600/30 border border-blue-500 rounded-lg px-3 py-1">
+                        <span className="text-blue-200">Nom série:</span>{' '}
+                        <span className="text-white font-semibold">{extractSeriesNameFromUrl(url)}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
               
               {/* Version tableau pour les grands écrans */}
               <div className="hidden md:block overflow-x-auto">
@@ -390,8 +534,43 @@ export default function ConvertisseurPage() {
                 ))}
               </div>
 
+              {/* Message de statut de sauvegarde */}
+              {saveMessage && (
+                <div className={`mt-4 p-4 rounded-lg border ${
+                  saveMessage.type === 'success' 
+                    ? 'bg-green-900/30 border-green-500 text-green-300' 
+                    : 'bg-red-900/30 border-red-500 text-red-300'
+                }`}>
+                  <div className="flex items-center gap-2">
+                    <span>{saveMessage.type === 'success' ? '✅' : '❌'}</span>
+                    <span>{saveMessage.text}</span>
+                  </div>
+                </div>
+              )}
+
               {/* Boutons d'action */}
               <div className="mt-6 flex gap-4 flex-wrap">
+                <button
+                  onClick={handleSaveToDatabase}
+                  disabled={isSaving || extractedCards.length === 0}
+                  className={`px-6 py-3 rounded-lg font-medium transition-all shadow-lg flex items-center gap-2 ${
+                    isSaving || extractedCards.length === 0
+                      ? 'bg-gray-600 cursor-not-allowed text-gray-300'
+                      : 'bg-purple-600 hover:bg-purple-700 text-white'
+                  }`}
+                >
+                  {isSaving ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      Sauvegarde...
+                    </>
+                  ) : (
+                    <>
+                      🗃️ Ajouter à la collection
+                    </>
+                  )}
+                </button>
+
                 <button
                   onClick={() => {
                     const dataStr = JSON.stringify(extractedCards, null, 2);
