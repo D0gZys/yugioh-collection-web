@@ -18,74 +18,143 @@ export default function ConvertisseurPage() {
   const [extractedCards, setExtractedCards] = useState<Card[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Fonction pour extraire les données des cartes depuis le HTML
-  const parseCardsFromHTML = (htmlText: string): Card[] => {
-    console.log('Début de l\'analyse HTML');
-    const cards: Card[] = [];
+  // Fonction pour extraire les cartes depuis le HTML
+  const parseCardsFromHTML = (html: string): Card[] => {
+    console.log('=== Début de l\'analyse HTML ===');
+    console.log('HTML reçu (longueur):', html.length);
+    console.log('HTML échantillon:', html.substring(0, 300));
     
-    // Nettoyer et préparer le HTML
-    let cleanHtml = htmlText.trim();
+    // Préparer le HTML pour le parsing
+    let htmlToParse = html;
     
-    // Si le texte commence par <tbody>, on l'encapsule dans une table complète
-    if (cleanHtml.startsWith('<tbody>')) {
-      cleanHtml = `<table>${cleanHtml}</table>`;
+    // Si le HTML commence par <tbody>, on l'entoure d'une table complète
+    if (html.trim().startsWith('<tbody')) {
+      htmlToParse = `<table>${html}</table>`;
+      console.log('HTML transformé en table complète');
     }
     
-    // Créer un élément temporaire pour parser le HTML
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = cleanHtml;
+    // Créer un élément DOM temporaire pour parser le HTML
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(htmlToParse, 'text/html');
     
-    // Récupérer tous les éléments <tr>
-    const rows = tempDiv.querySelectorAll('tr');
-    console.log('Nombre de lignes <tr> trouvées:', rows.length);
+    // Chercher le tableau des cartes (tbody)
+    const tbody = doc.querySelector('tbody');
+    if (!tbody) {
+      console.log('Aucun tbody trouvé');
+      console.log('Elements tbody disponibles:', doc.querySelectorAll('tbody').length);
+      console.log('Elements table disponibles:', doc.querySelectorAll('table').length);
+      return [];
+    }
     
-    rows.forEach((row, index) => {
+    console.log('Tbody trouvé:', tbody.outerHTML.substring(0, 200) + '...');
+    
+    const rows = tbody.querySelectorAll('tr');
+    console.log('Nombre de lignes trouvées:', rows.length);
+    
+    // Analyser chaque ligne pour identifier les en-têtes vs données
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const hasHeaders = row.querySelector('th') !== null;
+      const hasCells = row.querySelector('td') !== null;
+      console.log(`Ligne ${i}: headers=${hasHeaders}, cells=${hasCells}`);
+    }
+    
+    const cards: Card[] = [];
+    
+    // Traiter seulement les lignes avec des cellules de données (td)
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
       const cells = row.querySelectorAll('td');
-      console.log(`Ligne ${index}: ${cells.length} cellules trouvées`);
       
-      // Vérifier qu'on a au moins 5 colonnes (code, nom EN, nom FR, rareté, type)
-      if (cells.length >= 5) {
-        try {
-          // Extraire le code (première colonne)
-          const codeElement = cells[0].querySelector('a');
-          const code = codeElement?.textContent?.trim() || '';
-          
-          // Extraire le nom anglais (deuxième colonne)
-          const englishNameElement = cells[1].querySelector('a');
-          const nameEnglish = englishNameElement?.textContent?.replace(/"/g, '').trim() || '';
-          
-          // Extraire le nom français (troisième colonne) 
-          const frenchSpan = cells[2].querySelector('span[lang="fr"]');
-          const nameFrench = frenchSpan?.textContent?.replace(/"/g, '').trim() || '';
-          
-          // Extraire la rareté (quatrième colonne)
-          const rarityLinks = cells[3].querySelectorAll('a');
-          const rarity = Array.from(rarityLinks).map(link => link.textContent?.trim()).join(', ');
-          
-          // Extraire le type (cinquième colonne)
-          const typeLinks = cells[4].querySelectorAll('a');
-          const type = Array.from(typeLinks).map(link => link.textContent?.trim()).join(' ');
-          
-          // Ajouter la carte si toutes les informations essentielles sont présentes
-          if (code && nameEnglish && nameFrench) {
-            cards.push({
-              code,
-              nameEnglish,
-              nameFrench,
-              rarity,
-              type
-            });
+      // Ignorer les lignes d'en-têtes (qui n'ont que des th)
+      if (cells.length === 0) {
+        console.log(`Ligne ${i}: ligne d'en-tête, ignorée`);
+        continue;
+      }
+      
+      console.log(`Ligne ${i}:`, cells.length, 'cellules de données');
+      
+      if (cells.length >= 4) {
+        // Extraction du code de carte
+        const codeCell = cells[0];
+        const codeText = codeCell.textContent?.trim() || '';
+        console.log('Code brut:', codeText);
+        
+        // Extraction du nom anglais
+        const nameCell = cells[1];
+        let nameText = nameCell.textContent?.trim() || '';
+        console.log('Nom brut:', nameText);
+        
+        // Nettoyage du nom (enlever les guillemets)
+        if (nameText.startsWith('"') && nameText.endsWith('"')) {
+          nameText = nameText.slice(1, -1);
+        }
+        
+        // Détection des variantes d'artwork
+        let artworkVariant = '';
+        const artworkPatterns = [
+          '(new artwork)',
+          '(alternate artwork)',
+          '(alternative artwork)'
+        ];
+        
+        for (const pattern of artworkPatterns) {
+          if (nameText.includes(pattern)) {
+            artworkVariant = pattern;
+            // Retirer la mention du nom principal
+            nameText = nameText.replace(pattern, '').trim();
+            break;
           }
-        } catch (error) {
-          console.warn('Erreur lors de l\'extraction d\'une ligne:', error);
+        }
+        
+        console.log('Nom nettoyé:', nameText);
+        if (artworkVariant) {
+          console.log('Variante d\'artwork détectée:', artworkVariant);
+        }
+        
+        // Extraction du nom français
+        const frenchNameCell = cells[2];
+        let frenchNameText = frenchNameCell.textContent?.trim() || '';
+        if (frenchNameText.startsWith('"') && frenchNameText.endsWith('"')) {
+          frenchNameText = frenchNameText.slice(1, -1);
+        }
+        
+        // Extraction des raretés
+        const rarityCell = cells[3];
+        const rarityLinks = rarityCell.querySelectorAll('a');
+        const rarities = Array.from(rarityLinks).map(link => link.textContent?.trim() || '');
+        console.log('Raretés trouvées:', rarities);
+        
+        if (codeText && nameText && rarities.length > 0) {
+          // Créer une carte pour chaque rareté
+          rarities.forEach(rarity => {
+            let finalName = nameText;
+            let finalFrenchName = frenchNameText;
+            
+            // Si c'est une variante d'artwork, ajouter l'info entre parenthèses
+            if (artworkVariant) {
+              finalName = `${nameText} ${artworkVariant}`;
+              finalFrenchName = `${frenchNameText} ${artworkVariant}`;
+            }
+            
+            const card: Card = {
+              code: codeText,
+              nameEnglish: finalName,
+              nameFrench: finalFrenchName,
+              rarity: rarity,
+              type: cells[4]?.textContent?.trim() || ''
+            };
+            cards.push(card);
+            console.log('Carte ajoutée:', card);
+          });
         }
       }
-    });
+    }
     
+    console.log('=== Fin de l\'analyse ===');
+    console.log('Total des cartes extraites:', cards.length);
     return cards;
-  };
-
-  // Fonction pour récupérer les données depuis une URL
+  };  // Fonction pour récupérer les données depuis une URL
   const handleFetchFromUrl = async () => {
     if (!url.trim()) return;
     
@@ -125,22 +194,30 @@ export default function ConvertisseurPage() {
 
   // Fonction appelée lors du clic sur "Convertir"
   const handleConvert = () => {
+    console.log('=== DÉBOGAGE HANDLECONVERT ===');
     console.log('Bouton Convertir cliqué');
-    console.log('Texte à analyser:', text.substring(0, 200) + '...');
+    console.log('Longueur du texte:', text.length);
+    console.log('Text trim vide?', !text.trim());
+    console.log('Texte à analyser (200 premiers caractères):', text.substring(0, 200));
     
     if (!text.trim()) {
-      console.log('Aucun texte trouvé');
+      console.log('Aucun texte trouvé - Arrêt de la fonction');
+      alert('Aucun texte à convertir. Veuillez coller du contenu HTML.');
       return;
     }
     
     try {
+      console.log('Démarrage du parsing...');
       const cards = parseCardsFromHTML(text);
       console.log('Cartes extraites:', cards);
       console.log('Nombre de cartes:', cards.length);
       setExtractedCards(cards);
+      console.log('État mis à jour');
     } catch (error) {
       console.error('Erreur lors de l\'extraction:', error);
+      alert(`Erreur lors de l'extraction: ${error}`);
     }
+    console.log('=== FIN DÉBOGAGE HANDLECONVERT ===');
   };
 
   return (
