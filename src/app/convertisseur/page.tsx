@@ -14,7 +14,9 @@ interface Card {
 
 export default function ConvertisseurPage() {
   const [text, setText] = useState('');
+  const [url, setUrl] = useState('');
   const [extractedCards, setExtractedCards] = useState<Card[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
   // Fonction pour extraire les données des cartes depuis le HTML
   const parseCardsFromHTML = (htmlText: string): Card[] => {
@@ -83,6 +85,44 @@ export default function ConvertisseurPage() {
     return cards;
   };
 
+  // Fonction pour récupérer les données depuis une URL
+  const handleFetchFromUrl = async () => {
+    if (!url.trim()) return;
+    
+    setIsLoading(true);
+    try {
+      console.log('Récupération depuis URL:', url);
+      
+      const response = await fetch('/api/fetch-cards', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ url: url.trim() }),
+      });
+
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Erreur lors de la récupération');
+      }
+
+      console.log('HTML récupéré:', data.html.substring(0, 200) + '...');
+      
+      // Utiliser le HTML récupéré avec notre fonction d'extraction
+      const cards = parseCardsFromHTML(data.html);
+      console.log('Cartes extraites depuis URL:', cards);
+      setExtractedCards(cards);
+      setText(data.html); // Optionnel : afficher le HTML récupéré
+      
+    } catch (error) {
+      console.error('Erreur:', error);
+      alert(`Erreur: ${error}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Fonction appelée lors du clic sur "Convertir"
   const handleConvert = () => {
     console.log('Bouton Convertir cliqué');
@@ -116,11 +156,51 @@ export default function ConvertisseurPage() {
           </Link>
         </nav>
 
-        {/* Zone de texte */}
-        <div className="max-w-4xl mx-auto">
+        {/* Titre principal */}
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-bold text-white mb-2">
+            Convertisseur de Cartes Yu-Gi-Oh!
+          </h1>
+          <p className="text-gray-300">
+            Récupérez automatiquement les données depuis Yugipedia ou collez le code HTML
+          </p>
+        </div>
+
+        <div className="max-w-4xl mx-auto space-y-6">
+          {/* Section URL */}
           <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-6">
             <h2 className="text-2xl font-semibold text-white mb-4">
-              📝 Zone de texte
+              🌐 Récupération automatique depuis URL
+            </h2>
+            <div className="flex flex-col sm:flex-row gap-4">
+              <input
+                type="url"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://yugipedia.com/wiki/Set_Card_Lists:..."
+                className="flex-1 p-3 bg-white/10 border border-white/30 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+              />
+              <button
+                onClick={handleFetchFromUrl}
+                disabled={!url.trim() || isLoading}
+                className="px-6 py-3 bg-gradient-to-r from-green-500 to-teal-600 text-white font-semibold rounded-lg hover:from-green-600 hover:to-teal-700 transform hover:scale-105 transition-all shadow-lg disabled:from-gray-500 disabled:to-gray-600 disabled:cursor-not-allowed disabled:transform-none"
+              >
+                {isLoading ? '⏳ Récupération...' : '� Récupérer'}
+              </button>
+            </div>
+          </div>
+
+          {/* Séparateur */}
+          <div className="flex items-center justify-center">
+            <div className="border-t border-white/20 flex-grow"></div>
+            <span className="mx-4 text-white/60 text-sm font-medium">OU</span>
+            <div className="border-t border-white/20 flex-grow"></div>
+          </div>
+          
+          {/* Section manuelle */}
+          <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-6">
+            <h2 className="text-2xl font-semibold text-white mb-4">
+              📝 Collage manuel du code HTML
             </h2>
             
             <textarea
