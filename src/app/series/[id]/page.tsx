@@ -28,9 +28,10 @@ export default async function SeriePage({ params }: PageProps) {
             }
           }
         },
-        orderBy: {
-          numeroCarte: 'asc'
-        }
+        orderBy: [
+          { numeroCarte: 'asc' },
+          { artwork: 'asc' } // Trier aussi par artwork pour regrouper les versions
+        ]
       }
     }
   });
@@ -47,6 +48,13 @@ export default async function SeriePage({ params }: PageProps) {
   const cartesPossedees = serie.cartes.reduce((acc, carte) => {
     return acc + carte.carteRaretes.filter(cr => cr.possedee).length;
   }, 0);
+
+  // Compter les artworks différents
+  const artworkStats = serie.cartes.reduce((acc, carte) => {
+    const artworkType = carte.artwork || 'None';
+    acc[artworkType] = (acc[artworkType] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
 
   const pourcentageCompletion = cartesUniques > 0 ? (cartesPossedees / cartesUniques * 100).toFixed(1) : 0;
 
@@ -96,6 +104,27 @@ export default async function SeriePage({ params }: PageProps) {
             </div>
           </div>
 
+          {/* Répartition des artworks */}
+          {(artworkStats['Alternative'] || artworkStats['New']) && (
+            <div className="mt-4 flex justify-center gap-4 text-sm">
+              {artworkStats['Alternative'] && (
+                <span className="bg-orange-600/20 text-orange-300 px-3 py-1 rounded-full border border-orange-500/50">
+                  🎨 {artworkStats['Alternative']} Artwork{artworkStats['Alternative'] > 1 ? 's' : ''} Alternatif{artworkStats['Alternative'] > 1 ? 's' : ''}
+                </span>
+              )}
+              {artworkStats['New'] && (
+                <span className="bg-cyan-600/20 text-cyan-300 px-3 py-1 rounded-full border border-cyan-500/50">
+                  ✨ {artworkStats['New']} Nouvel{artworkStats['New'] > 1 ? 'x' : ''} Artwork{artworkStats['New'] > 1 ? 's' : ''}
+                </span>
+              )}
+              {artworkStats['None'] && (
+                <span className="bg-gray-600/20 text-gray-300 px-3 py-1 rounded-full border border-gray-500/50">
+                  📄 {artworkStats['None']} Standard{artworkStats['None'] > 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
+          )}
+
           {/* Barre de progression */}
           <div className="mt-6 max-w-md mx-auto">
             <div className="bg-gray-700 rounded-full h-3">
@@ -122,11 +151,30 @@ export default async function SeriePage({ params }: PageProps) {
 
         {/* Liste des cartes */}
         <div className="space-y-4">
-          {serie.cartes.map((carte) => (
+          {serie.cartes.map((carte) => {
+            // Vérifier si d'autres versions de cette carte existent (même code mais artwork différent)
+            const autresVersions = serie.cartes.filter(c => 
+              c.numeroCarte === carte.numeroCarte && c.id !== carte.id
+            );
+
+            return (
             <div key={carte.id} className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-lg p-4">
               <div className="flex justify-between items-start mb-3">
                 <div>
-                  <h3 className="text-lg font-semibold text-white">{carte.nomCarte}</h3>
+                  <div className="flex items-center gap-3 mb-1">
+                    <h3 className="text-lg font-semibold text-white">{carte.nomCarte}</h3>
+                    {carte.artwork && carte.artwork !== 'None' && (
+                      <span className={`px-2 py-1 rounded-md text-xs font-semibold ${
+                        carte.artwork === 'Alternative' ? 'bg-orange-600/30 text-orange-300 border border-orange-500/50' :
+                        carte.artwork === 'New' ? 'bg-cyan-600/30 text-cyan-300 border border-cyan-500/50' :
+                        'bg-gray-600/30 text-gray-300 border border-gray-500/50'
+                      }`}>
+                        {carte.artwork === 'Alternative' ? '🎨 Artwork Alternatif' :
+                         carte.artwork === 'New' ? '✨ Nouvel Artwork' :
+                         carte.artwork}
+                      </span>
+                    )}
+                  </div>
                   <p className="text-blue-300 text-sm">{carte.numeroCarte}</p>
                 </div>
               </div>
@@ -180,8 +228,18 @@ export default async function SeriePage({ params }: PageProps) {
                   </div>
                 ))}
               </div>
+
+              {/* Indicateur d'autres versions */}
+              {autresVersions.length > 0 && (
+                <div className="mt-2 text-xs text-blue-300">
+                  💡 Cette carte existe aussi en {autresVersions.length} autre{autresVersions.length > 1 ? 's' : ''} version{autresVersions.length > 1 ? 's' : ''} 
+                  ({autresVersions.map(v => v.artwork === 'Alternative' ? 'artwork alternatif' : 
+                                             v.artwork === 'New' ? 'nouvel artwork' : 'standard').join(', ')})
+                </div>
+              )}
             </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* Footer */}

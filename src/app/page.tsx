@@ -13,6 +13,9 @@ type SeriesWithCount = {
   _count: {
     cartes: number;
   };
+  cartes: {
+    artwork: string;
+  }[];
 };
 
 export default async function Home() {
@@ -20,11 +23,16 @@ export default async function Home() {
   let hasDbError = false;
 
   try {
-    // Récupérer toutes les séries avec le nombre de cartes
+    // Récupérer toutes les séries avec le nombre de cartes et les statistiques d'artwork
     series = await prisma.series.findMany({
       include: {
         _count: {
           select: { cartes: true }
+        },
+        cartes: {
+          select: {
+            artwork: true
+          }
         }
       },
       orderBy: {
@@ -84,42 +92,74 @@ export default async function Home() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {series.map((serie) => (
-            <Link key={serie.id} href={`/series/${serie.id}`}>
-              <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-6 hover:bg-white/20 transition-all duration-300 cursor-pointer group">
-                <div className="flex justify-between items-start mb-4">
-                  <h2 className="text-xl font-semibold text-white group-hover:text-blue-200 transition-colors">
-                    {serie.nomSerie}
-                  </h2>
-                  <span className="bg-blue-500/30 text-blue-200 px-3 py-1 rounded-full text-sm font-medium">
-                    {serie.codeSerie}
-                  </span>
-                </div>
-                
-                <div className="space-y-2 text-gray-300">
-                  <p className="flex justify-between">
-                    <span>Cartes:</span>
-                    <span className="font-semibold text-white">{serie._count.cartes}</span>
-                  </p>
-                  <p className="flex justify-between">
-                    <span>Total prévu:</span>
-                    <span className="font-semibold text-white">{serie.nbCartesTotal || 'N/A'}</span>
-                  </p>
-                  {serie.urlSource && (
-                    <p className="text-xs text-blue-300 truncate mt-3">
-                      📖 Source disponible
-                    </p>
-                  )}
-                </div>
-                
-                <div className="mt-4 pt-4 border-t border-white/10">
-                  <p className="text-xs text-gray-400">
-                    Ajoutée le {new Date(serie.dateAjout).toLocaleDateString('fr-FR')}
-                  </p>
-                </div>
-              </div>
-            </Link>
-          ))}
+            {series.map((serie) => {
+              // Calculer les statistiques d'artwork pour cette série
+              const artworkStats = serie.cartes.reduce((acc, carte) => {
+                const artworkType = carte.artwork || 'None';
+                acc[artworkType] = (acc[artworkType] || 0) + 1;
+                return acc;
+              }, {} as Record<string, number>);
+
+              const hasSpecialArtworks = artworkStats['Alternative'] || artworkStats['New'];
+
+              return (
+                <Link key={serie.id} href={`/series/${serie.id}`}>
+                  <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-6 hover:bg-white/20 transition-all duration-300 cursor-pointer group">
+                    <div className="flex justify-between items-start mb-4">
+                      <h2 className="text-xl font-semibold text-white group-hover:text-blue-200 transition-colors">
+                        {serie.nomSerie}
+                      </h2>
+                      <span className="bg-blue-500/30 text-blue-200 px-3 py-1 rounded-full text-sm font-medium">
+                        {serie.codeSerie}
+                      </span>
+                    </div>
+                    
+                    <div className="space-y-2 text-gray-300">
+                      <p className="flex justify-between">
+                        <span>Cartes:</span>
+                        <span className="font-semibold text-white">{serie._count.cartes}</span>
+                      </p>
+                      <p className="flex justify-between">
+                        <span>Total prévu:</span>
+                        <span className="font-semibold text-white">{serie.nbCartesTotal || 'N/A'}</span>
+                      </p>
+                      
+                      {/* Affichage des artworks spéciaux */}
+                      {hasSpecialArtworks && (
+                        <div className="mt-3 space-y-1">
+                          {artworkStats['Alternative'] && (
+                            <div className="flex items-center gap-2 text-xs">
+                              <span className="bg-orange-600/30 text-orange-300 px-2 py-1 rounded border border-orange-500/50">
+                                🎨 {artworkStats['Alternative']} Alternatif{artworkStats['Alternative'] > 1 ? 's' : ''}
+                              </span>
+                            </div>
+                          )}
+                          {artworkStats['New'] && (
+                            <div className="flex items-center gap-2 text-xs">
+                              <span className="bg-cyan-600/30 text-cyan-300 px-2 py-1 rounded border border-cyan-500/50">
+                                ✨ {artworkStats['New']} Nouveau{artworkStats['New'] > 1 ? 'x' : ''}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
+                      {serie.urlSource && (
+                        <p className="text-xs text-blue-300 truncate mt-3">
+                          📖 Source disponible
+                        </p>
+                      )}
+                    </div>
+                    
+                    <div className="mt-4 pt-4 border-t border-white/10">
+                      <p className="text-xs text-gray-400">
+                        Ajoutée le {new Date(serie.dateAjout).toLocaleDateString('fr-FR')}
+                      </p>
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
           </div>
         )}
 
