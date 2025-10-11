@@ -35,12 +35,14 @@ model Carte {
   numeroCarte String    @map("numero_carte") @db.VarChar(20)
   nomCarte    String    @map("nom_carte") @db.VarChar(200)
   serieId     Int       @map("serie_id")
+  artwork     String    @default("None") @db.VarChar(20) // None, New, Alternative
   dateAjout   DateTime  @default(now()) @map("date_ajout")
   
   // Relations
   serie       Series    @relation(fields: [serieId], references: [id], onDelete: Cascade)
   carteRaretes CarteRarete[]
   
+  @@unique([numeroCarte, serieId, artwork]) // Une carte unique par code + série + artwork
   @@map("cartes")
 }
 

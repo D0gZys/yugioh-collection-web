@@ -10,6 +10,7 @@ interface Card {
   nameFrench: string;
   rarity: string;
   type: string;
+  artwork?: string; // None, New, Alternative
 }
 
 export default function ConvertisseurPage() {
@@ -93,25 +94,52 @@ export default function ConvertisseurPage() {
         }
         
         // Détection des variantes d'artwork
-        let artworkVariant = '';
-        const artworkPatterns = [
-          '(new artwork)',
-          '(alternate artwork)',
-          '(alternative artwork)'
+        let artworkType = 'None';
+        
+        // Patterns dans le nom de la carte
+        const nameArtworkPatterns = [
+          { pattern: '(new artwork)', type: 'New' },
+          { pattern: '(alternate artwork)', type: 'Alternative' },
+          { pattern: '(alternative artwork)', type: 'Alternative' },
+          { pattern: '(alt artwork)', type: 'Alternative' },
+          { pattern: '(alt)', type: 'Alternative' }
         ];
         
-        for (const pattern of artworkPatterns) {
-          if (nameText.includes(pattern)) {
-            artworkVariant = pattern;
+        for (const { pattern, type } of nameArtworkPatterns) {
+          if (nameText.toLowerCase().includes(pattern.toLowerCase())) {
+            artworkType = type;
             // Retirer la mention du nom principal
-            nameText = nameText.replace(pattern, '').trim();
+            nameText = nameText.replace(new RegExp(pattern, 'gi'), '').trim();
             break;
           }
         }
         
+        // Si pas trouvé dans le nom, vérifier s'il y a des indices dans les cellules précédentes/suivantes
+        // ou dans le code de carte lui-même
+        if (artworkType === 'None') {
+          // Vérifier les patterns dans le code de carte
+          const codeArtworkPatterns = [
+            /-aa$/i,     // RA04-FR052-AA (alternate artwork)
+            /-alt$/i,    // RA04-FR052-ALT
+            /-new$/i,    // RA04-FR052-NEW
+            /-a$/i       // RA04-FR052-A (souvent alternate)
+          ];
+          
+          for (const pattern of codeArtworkPatterns) {
+            if (pattern.test(codeText)) {
+              if (/-new$/i.test(codeText)) {
+                artworkType = 'New';
+              } else {
+                artworkType = 'Alternative';
+              }
+              break;
+            }
+          }
+        }
+        
         console.log('Nom nettoyé:', nameText);
-        if (artworkVariant) {
-          console.log('Variante d\'artwork détectée:', artworkVariant);
+        if (artworkType !== 'None') {
+          console.log('Variante d\'artwork détectée:', artworkType);
         }
         
         // Extraction du nom français
@@ -130,21 +158,13 @@ export default function ConvertisseurPage() {
         if (codeText && nameText && rarities.length > 0) {
           // Créer une carte pour chaque rareté
           rarities.forEach(rarity => {
-            let finalName = nameText;
-            let finalFrenchName = frenchNameText;
-            
-            // Si c'est une variante d'artwork, ajouter l'info entre parenthèses
-            if (artworkVariant) {
-              finalName = `${nameText} ${artworkVariant}`;
-              finalFrenchName = `${frenchNameText} ${artworkVariant}`;
-            }
-            
             const card: Card = {
               code: codeText,
-              nameEnglish: finalName,
-              nameFrench: finalFrenchName,
+              nameEnglish: nameText, // Nom sans la mention d'artwork
+              nameFrench: frenchNameText, // Nom français sans la mention d'artwork
               rarity: rarity,
-              type: cells[4]?.textContent?.trim() || ''
+              type: cells[4]?.textContent?.trim() || '',
+              artwork: artworkType // Nouveau champ artwork séparé
             };
             cards.push(card);
             console.log('Carte ajoutée:', card);
@@ -494,6 +514,7 @@ export default function ConvertisseurPage() {
                       <th className="text-left p-3 font-semibold">Nom Anglais</th>
                       <th className="text-left p-3 font-semibold">Nom Français</th>
                       <th className="text-left p-3 font-semibold">Rareté</th>
+                      <th className="text-left p-3 font-semibold">Artwork</th>
                       <th className="text-left p-3 font-semibold">Type</th>
                     </tr>
                   </thead>
@@ -504,6 +525,15 @@ export default function ConvertisseurPage() {
                         <td className="p-3">{card.nameEnglish}</td>
                         <td className="p-3 text-green-300">{card.nameFrench}</td>
                         <td className="p-3 text-yellow-300">{card.rarity}</td>
+                        <td className="p-3">
+                          <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                            card.artwork === 'Alternative' ? 'bg-orange-600/30 text-orange-300' :
+                            card.artwork === 'New' ? 'bg-cyan-600/30 text-cyan-300' :
+                            'bg-gray-600/30 text-gray-300'
+                          }`}>
+                            {card.artwork || 'None'}
+                          </span>
+                        </td>
                         <td className="p-3 text-purple-300">{card.type}</td>
                       </tr>
                     ))}
@@ -525,6 +555,16 @@ export default function ConvertisseurPage() {
                       </div>
                       <div>
                         <span className="text-gray-400">Rareté:</span> <span className="text-yellow-300">{card.rarity}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400">Artwork:</span>{' '}
+                        <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                          card.artwork === 'Alternative' ? 'bg-orange-600/30 text-orange-300' :
+                          card.artwork === 'New' ? 'bg-cyan-600/30 text-cyan-300' :
+                          'bg-gray-600/30 text-gray-300'
+                        }`}>
+                          {card.artwork || 'None'}
+                        </span>
                       </div>
                       <div>
                         <span className="text-gray-400">Type:</span> <span className="text-purple-300">{card.type}</span>
