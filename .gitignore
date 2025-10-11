@@ -46,4 +46,26 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# prisma
 /src/generated/prisma
+
+# système files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# logs
+logs
+*.log
+
+# backup files
+*.bak
+*~
+*.tmp
+
+# duplicated files
+*" 2."*
+*" - Copie"*
+*" - Copy"*
