@@ -46,6 +46,14 @@ La page d’accueil liste les séries persistées. La page `convertisseur` perme
 - soit de récupérer automatiquement un set depuis Yugipedia (`/api/fetch-cards` renvoie des cartes structurées),
 - soit de coller un `<tbody>` HTML pour l’analyser côté client avant sauvegarde dans la base (`/api/save-series`).
 
+### Convertisseur : confort & contrôle
+
+- **Synthèse instantanée** : codes uniques, raretés détectées, artworks et doublons sont affichés en tête.
+- **Filtres dynamiques** : recherche par nom/numéro, filtres par artwork & rareté, réinitialisation rapide.
+- **Édition inline** : toutes les colonnes sont modifiables (code, noms, rareté, artwork, type) avec surlignage des entrées incomplètes et suppression par ligne.
+- **Historique local** : les dernières URLs importées sont mémorisées (localStorage) pour relancer un import en un clic.
+- **Validation stricte** : la sauvegarde est bloquée tant qu’une carte est incomplète ; les doublons sont signalés dans le résumé.
+
 ## Qualité & Tests
 
 - ESLint + TypeScript strict.

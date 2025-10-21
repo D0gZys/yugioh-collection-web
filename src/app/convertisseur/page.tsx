@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   detectArtworkType,
   normalizeCardName,
@@ -139,6 +139,65 @@ export default function ConvertisseurPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [selectedArtworks, setSelectedArtworks] = useState<ArtworkType[]>([]);
+  const [selectedRarities, setSelectedRarities] = useState<string[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [recentUrls, setRecentUrls] = useState<string[]>([]);
+  const STORAGE_KEY = 'convertisseur:last-imports';
+
+  useEffect(() => {
+    const stored = (typeof window !== 'undefined' && window.localStorage.getItem(STORAGE_KEY)) || null;
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          setRecentUrls(parsed.slice(0, 5));
+        }
+      } catch (error) {
+        console.warn('Impossible de lire les imports récents', error);
+      }
+    }
+  }, []);
+
+  const artworkOptions = useMemo<ArtworkType[]>(() => {
+    const set = new Set<ArtworkType>();
+    extractedCards.forEach((card) => {
+      set.add(card.artwork);
+    });
+    return Array.from(set);
+  }, [extractedCards]);
+
+  const rarityOptions = useMemo<string[]>(() => {
+    const set = new Set<string>();
+    extractedCards.forEach((card) => {
+      set.add(card.rarity);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'fr'));
+  }, [extractedCards]);
+
+  const summaryStats = useMemo(() => {
+    const codes = new Set<string>();
+    const rarityCount: Record<string, number> = {};
+    const artworkCount: Record<ArtworkType, number> = {
+      None: 0,
+      New: 0,
+      Alternative: 0,
+    };
+
+    extractedCards.forEach((card) => {
+      codes.add(card.code);
+      rarityCount[card.rarity] = (rarityCount[card.rarity] || 0) + 1;
+      artworkCount[card.artwork] = (artworkCount[card.artwork] || 0) + 1;
+    });
+
+    return {
+      totalEntries: extractedCards.length,
+      uniqueCodes: codes.size,
+      duplicates: Math.max(extractedCards.length - codes.size, 0),
+      rarityCount,
+      artworkCount,
+    };
+  }, [extractedCards]);
 
   const showMessage = (message: { type: 'success' | 'error'; text: string }, duration = 5000) => {
     setSaveMessage(message);
@@ -172,6 +231,13 @@ export default function ConvertisseurPage() {
       setExtractedCards(data.cards);
       setUrl(data.url);
       setText('');
+      setRecentUrls((prev) => {
+        const next = [data.url, ...prev.filter((item) => item !== data.url)].slice(0, 5);
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+        }
+        return next;
+      });
       showMessage({
         type: 'success',
         text: `${data.cardsCount} versions détectées (${data.uniqueCodes} codes uniques)`,
@@ -195,6 +261,15 @@ export default function ConvertisseurPage() {
     const seriesCode = extractedCards[0]?.code.substring(0, 4);
     if (!seriesCode) {
       showMessage({ type: 'error', text: 'Impossible de déterminer le code de série' });
+      return;
+    }
+
+    const invalidIndex = extractedCards.findIndex((card) => !isCardValid(card));
+    if (invalidIndex !== -1) {
+      showMessage({
+        type: 'error',
+        text: 'Certaines cartes sont incomplètes. Vérifiez les codes, noms et raretés avant de sauvegarder.',
+      });
       return;
     }
 
@@ -259,9 +334,63 @@ export default function ConvertisseurPage() {
     setText('');
     setExtractedCards([]);
     setSaveMessage(null);
+    resetFilters();
   };
 
+  const updateCard = (index: number, updates: Partial<Card>) => {
+    setExtractedCards((prev) =>
+      prev.map((card, cardIndex) => (cardIndex === index ? { ...card, ...updates } : card))
+    );
+  };
+
+  const removeCard = (index: number) => {
+    setExtractedCards((prev) => prev.filter((_, cardIndex) => cardIndex !== index));
+  };
+
+  const toggleArtworkFilter = (artwork: ArtworkType) => {
+    setSelectedArtworks((prev) =>
+      prev.includes(artwork) ? prev.filter((item) => item !== artwork) : [...prev, artwork]
+    );
+  };
+
+  const toggleRarityFilter = (rarity: string) => {
+    setSelectedRarities((prev) =>
+      prev.includes(rarity) ? prev.filter((item) => item !== rarity) : [...prev, rarity]
+    );
+  };
+
+  const resetFilters = () => {
+    setSelectedArtworks([]);
+    setSelectedRarities([]);
+    setSearchTerm('');
+  };
+
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+
+  const filteredCards = useMemo(() => {
+    return extractedCards
+      .map((card, index) => ({ card, index }))
+      .filter(({ card }) => {
+        const matchesArtwork =
+          selectedArtworks.length === 0 || selectedArtworks.includes(card.artwork);
+        const matchesRarity =
+          selectedRarities.length === 0 || selectedRarities.includes(card.rarity);
+        const matchesSearch =
+          normalizedSearch.length === 0 ||
+          card.code.toLowerCase().includes(normalizedSearch) ||
+          card.nameEnglish.toLowerCase().includes(normalizedSearch) ||
+          card.nameFrench.toLowerCase().includes(normalizedSearch) ||
+          card.rarity.toLowerCase().includes(normalizedSearch);
+
+        return matchesArtwork && matchesRarity && matchesSearch;
+      });
+  }, [extractedCards, selectedArtworks, selectedRarities, normalizedSearch]);
+
   const derivedSeriesName = extractSeriesNameFromUrl(url);
+
+  const isCardValid = (card: Card) => {
+    return Boolean(card.code.trim() && card.nameEnglish.trim() && card.rarity.trim());
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-900 via-purple-900 to-indigo-900">
@@ -298,6 +427,20 @@ export default function ConvertisseurPage() {
                 {isLoading ? '⏳ Récupération...' : '� Récupérer'}
               </button>
             </div>
+            {recentUrls.length > 0 && (
+              <div className="mt-3 text-sm text-blue-200 flex flex-wrap items-center gap-2">
+                <span className="opacity-70">Dernières importations :</span>
+                {recentUrls.map((recentUrl) => (
+                  <button
+                    key={recentUrl}
+                    onClick={() => setUrl(recentUrl)}
+                    className="px-3 py-1 bg-white/10 border border-white/20 rounded-full hover:bg-white/20 transition-colors"
+                  >
+                    {recentUrl.length > 45 ? `${recentUrl.slice(0, 42)}…` : recentUrl}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="flex items-center justify-center">
@@ -362,21 +505,143 @@ export default function ConvertisseurPage() {
         {extractedCards.length > 0 && (
           <div className="max-w-7xl mx-auto mt-8">
             <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-semibold text-white flex items-center gap-2">
-                  🃏 Cartes extraites ({extractedCards.length})
-                </h2>
-                <div className="space-y-2">
-                  <div className="text-sm bg-purple-600/30 border border-purple-500 rounded-lg px-3 py-1">
-                    <span className="text-purple-200">Code série:</span>{' '}
-                    <span className="text-white font-semibold">{extractedCards[0]?.code.substring(0, 4)}</span>
-                  </div>
-                  {derivedSeriesName && (
-                    <div className="text-sm bg-blue-600/30 border border-blue-500 rounded-lg px-3 py-1">
-                      <span className="text-blue-200">Nom série:</span>{' '}
-                      <span className="text-white font-semibold">{derivedSeriesName}</span>
+              <div className="flex flex-col gap-6 mb-6">
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <h2 className="text-2xl font-semibold text-white flex items-center gap-2">
+                    🃏 Cartes extraites ({extractedCards.length})
+                  </h2>
+                  <div className="space-y-2 text-sm">
+                    <div className="bg-purple-600/30 border border-purple-500 rounded-lg px-3 py-1 text-purple-200">
+                      <span className="font-medium text-white">Code série:</span>{' '}
+                      {extractedCards[0]?.code.substring(0, 4)}
                     </div>
-                  )}
+                    {derivedSeriesName && (
+                      <div className="bg-blue-600/30 border border-blue-500 rounded-lg px-3 py-1 text-blue-200">
+                        <span className="font-medium text-white">Nom série:</span>{' '}
+                        {derivedSeriesName}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-4">
+                  <div className="bg-white/5 border border-white/10 rounded-lg p-4">
+                    <div className="text-sm text-blue-200 uppercase tracking-wide">Entrées totales</div>
+                    <div className="text-2xl font-semibold text-white mt-1">{summaryStats.totalEntries}</div>
+                    <div className="text-xs text-blue-300 mt-1">
+                      {filteredCards.length} visibles avec les filtres
+                    </div>
+                  </div>
+                  <div className="bg-white/5 border border-white/10 rounded-lg p-4">
+                    <div className="text-sm text-blue-200 uppercase tracking-wide">Codes uniques</div>
+                    <div className="text-2xl font-semibold text-white mt-1">{summaryStats.uniqueCodes}</div>
+                    <div className="text-xs text-blue-300 mt-1">
+                      {summaryStats.duplicates} doublon{summaryStats.duplicates > 1 ? 's' : ''}
+                    </div>
+                  </div>
+                  <div className="bg-white/5 border border-white/10 rounded-lg p-4">
+                    <div className="text-sm text-blue-200 uppercase tracking-wide">Raretés</div>
+                    <div className="text-2xl font-semibold text-white mt-1">{Object.keys(summaryStats.rarityCount).length}</div>
+                    <div className="text-xs text-blue-300 mt-1">
+                      {Object.entries(summaryStats.rarityCount)
+                        .slice(0, 2)
+                        .map(([key, value]) => `${key}: ${value}`)
+                        .join(' • ')}
+                    </div>
+                  </div>
+                  <div className="bg-white/5 border border-white/10 rounded-lg p-4">
+                    <div className="text-sm text-blue-200 uppercase tracking-wide">Artworks</div>
+                    <div className="text-2xl font-semibold text-white mt-1">
+                      {Object.entries(summaryStats.artworkCount)
+                        .filter(([, value]) => value > 0).length}
+                    </div>
+                    <div className="text-xs text-blue-300 mt-1">
+                      {Object.entries(summaryStats.artworkCount)
+                        .filter(([, value]) => value > 0)
+                        .map(([key, value]) => `${key}: ${value}`)
+                        .join(' • ') || 'Aucun'}
+                    </div>
+                  </div>
+                </div>
+
+                {summaryStats.duplicates > 0 && (
+                  <div className="bg-orange-600/20 border border-orange-500/40 text-orange-200 rounded-lg px-4 py-3 text-sm">
+                    ⚠️ {summaryStats.duplicates} doublon{summaryStats.duplicates > 1 ? 's' : ''} détecté{summaryStats.duplicates > 1 ? 's' : ''}. Vérifiez les codes ou artworks avant de sauvegarder.
+                  </div>
+                )}
+
+                <div className="bg-white/5 border border-white/10 rounded-lg p-4">
+                  <div className="flex flex-wrap gap-4">
+                    <div className="flex-1 min-w-[200px]">
+                      <h3 className="text-sm text-blue-200 uppercase tracking-wide mb-2">Artworks</h3>
+                      <div className="flex flex-wrap gap-2">
+                        {artworkOptions.map((artwork) => {
+                          const label =
+                            artwork === 'Alternative'
+                              ? '🎨 Alternatif'
+                              : artwork === 'New'
+                                ? '✨ Nouvel artwork'
+                                : '📄 Standard';
+                          const selected = selectedArtworks.includes(artwork);
+                          return (
+                            <button
+                              key={artwork}
+                              onClick={() => toggleArtworkFilter(artwork)}
+                              className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors border ${
+                                selected
+                                  ? 'bg-blue-500/40 border-blue-400 text-white'
+                                  : 'bg-white/10 border-white/20 text-blue-200 hover:bg-white/20'
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="flex-1 min-w-[200px]">
+                      <h3 className="text-sm text-blue-200 uppercase tracking-wide mb-2">Raretés</h3>
+                      <div className="flex flex-wrap gap-2 max-h-24 overflow-y-auto pr-1">
+                        {rarityOptions.map((rarity) => {
+                          const selected = selectedRarities.includes(rarity);
+                          return (
+                            <button
+                              key={rarity}
+                              onClick={() => toggleRarityFilter(rarity)}
+                              className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors border ${
+                                selected
+                                  ? 'bg-purple-600/50 border-purple-400 text-white'
+                                  : 'bg-white/10 border-white/20 text-purple-200 hover:bg-white/20'
+                              }`}
+                            >
+                              {rarity}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="flex-1 min-w-[200px]">
+                      <h3 className="text-sm text-blue-200 uppercase tracking-wide mb-2">Recherche</h3>
+                      <div className="relative">
+                        <input
+                          type="search"
+                          value={searchTerm}
+                          onChange={(event) => setSearchTerm(event.target.value)}
+                          placeholder="Nom, code ou rareté..."
+                          className="w-full bg-white/10 border border-white/20 rounded-lg py-2.5 pl-10 pr-3 text-white placeholder:text-blue-200/60 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+                        />
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-200">🔍</span>
+                      </div>
+                      <button
+                        onClick={resetFilters}
+                        className="mt-2 text-xs text-red-300 hover:text-red-200 underline underline-offset-4"
+                      >
+                        Réinitialiser les filtres
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -390,72 +655,144 @@ export default function ConvertisseurPage() {
                       <th className="text-left p-3 font-semibold">Rareté</th>
                       <th className="text-left p-3 font-semibold">Artwork</th>
                       <th className="text-left p-3 font-semibold">Type</th>
+                      <th className="text-left p-3 font-semibold"></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {extractedCards.map((card, index) => (
-                      <tr key={`${card.code}-${card.artwork}-${card.rarity}-${index}`} className="border-b border-white/10 hover:bg-white/5 transition-colors">
-                        <td className="p-3 font-mono text-blue-300">{card.code}</td>
-                        <td className="p-3">{card.nameEnglish}</td>
-                        <td className="p-3 text-green-300">{card.nameFrench}</td>
-                        <td className="p-3 text-yellow-300">{card.rarity}</td>
-                        <td className="p-3">
-                          <span
-                            className={`px-2 py-1 rounded text-xs font-semibold ${
-                              card.artwork === 'Alternative'
-                                ? 'bg-orange-600/30 text-orange-300'
-                                : card.artwork === 'New'
-                                  ? 'bg-cyan-600/30 text-cyan-300'
-                                  : 'bg-gray-600/30 text-gray-300'
-                            }`}
-                          >
-                            {card.artwork || 'None'}
-                          </span>
-                        </td>
-                        <td className="p-3 text-purple-300">{card.type}</td>
-                      </tr>
-                    ))}
+                    {filteredCards.map(({ card, index }) => {
+                      const rowHasError = !isCardValid(card);
+                      return (
+                        <tr
+                          key={`${index}-${card.code}-${card.artwork}-${card.rarity}`}
+                          className={`border-b border-white/10 hover:bg-white/5 transition-colors ${
+                            rowHasError ? 'bg-red-900/20' : ''
+                          }`}
+                        >
+                          <td className="p-3">
+                            <input
+                              value={card.code}
+                              onChange={(event) => updateCard(index, { code: event.target.value })}
+                              className="w-full bg-transparent border border-white/10 rounded px-2 py-1 text-blue-200 focus:outline-none focus:border-blue-400"
+                            />
+                          </td>
+                          <td className="p-3">
+                            <input
+                              value={card.nameEnglish}
+                              onChange={(event) => updateCard(index, { nameEnglish: event.target.value })}
+                              className="w-full bg-transparent border border-white/10 rounded px-2 py-1 text-white focus:outline-none focus:border-blue-400"
+                            />
+                          </td>
+                          <td className="p-3">
+                            <input
+                              value={card.nameFrench}
+                              onChange={(event) => updateCard(index, { nameFrench: event.target.value })}
+                              className="w-full bg-transparent border border-white/10 rounded px-2 py-1 text-green-200 focus:outline-none focus:border-blue-400"
+                            />
+                          </td>
+                          <td className="p-3">
+                            <input
+                              value={card.rarity}
+                              onChange={(event) => updateCard(index, { rarity: event.target.value })}
+                              className="w-full bg-transparent border border-white/10 rounded px-2 py-1 text-yellow-200 focus:outline-none focus:border-blue-400"
+                            />
+                          </td>
+                          <td className="p-3">
+                            <select
+                              value={card.artwork}
+                              onChange={(event) => updateCard(index, { artwork: event.target.value as ArtworkType })}
+                              className="bg-transparent border border-white/10 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-400"
+                            >
+                              <option value="None">📄 Standard</option>
+                              <option value="Alternative">🎨 Alternatif</option>
+                              <option value="New">✨ Nouvel artwork</option>
+                            </select>
+                          </td>
+                          <td className="p-3">
+                            <input
+                              value={card.type}
+                              onChange={(event) => updateCard(index, { type: event.target.value })}
+                              className="w-full bg-transparent border border-white/10 rounded px-2 py-1 text-purple-200 focus:outline-none focus:border-blue-400"
+                            />
+                          </td>
+                          <td className="p-3 text-right">
+                            <button
+                              onClick={() => removeCard(index)}
+                              className="text-red-300 hover:text-red-200 text-xs underline"
+                            >
+                              Supprimer
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
 
               <div className="md:hidden space-y-4">
-                {extractedCards.map((card, index) => (
-                  <div key={`${card.code}-${card.artwork}-${card.rarity}-${index}`} className="bg-white/5 rounded-lg p-4 border border-white/20">
-                    <div className="font-mono text-blue-300 text-lg font-bold mb-2">{card.code}</div>
-                    <div className="space-y-2">
-                      <div>
-                        <span className="text-gray-400">EN:</span> <span className="text-white">{card.nameEnglish}</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-400">FR:</span>{' '}
-                        <span className="text-green-300">{card.nameFrench}</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-400">Rareté:</span>{' '}
-                        <span className="text-yellow-300">{card.rarity}</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-400">Artwork:</span>{' '}
-                        <span
-                          className={`px-2 py-1 rounded text-xs font-semibold ${
-                            card.artwork === 'Alternative'
-                              ? 'bg-orange-600/30 text-orange-300'
-                              : card.artwork === 'New'
-                                ? 'bg-cyan-600/30 text-cyan-300'
-                                : 'bg-gray-600/30 text-gray-300'
-                          }`}
+                {filteredCards.map(({ card, index }) => {
+                  const rowHasError = !isCardValid(card);
+                  return (
+                    <div
+                      key={`${index}-${card.code}-${card.artwork}-${card.rarity}`}
+                      className={`bg-white/5 rounded-lg p-4 border border-white/20 ${rowHasError ? 'border-red-500/40' : ''}`}
+                    >
+                      <div className="font-mono text-blue-300 text-lg font-bold mb-2">{card.code}</div>
+                      <div className="space-y-2">
+                        <div>
+                          <span className="text-gray-400">EN:</span>
+                          <input
+                            value={card.nameEnglish}
+                            onChange={(event) => updateCard(index, { nameEnglish: event.target.value })}
+                            className="ml-2 w-full bg-transparent border border-white/10 rounded px-2 py-1 text-white focus:outline-none focus:border-blue-400"
+                          />
+                        </div>
+                        <div>
+                          <span className="text-gray-400">FR:</span>
+                          <input
+                            value={card.nameFrench}
+                            onChange={(event) => updateCard(index, { nameFrench: event.target.value })}
+                            className="ml-2 w-full bg-transparent border border-white/10 rounded px-2 py-1 text-green-200 focus:outline-none focus:border-blue-400"
+                          />
+                        </div>
+                        <div>
+                          <span className="text-gray-400">Rareté:</span>
+                          <input
+                            value={card.rarity}
+                            onChange={(event) => updateCard(index, { rarity: event.target.value })}
+                            className="ml-2 w-full bg-transparent border border-white/10 rounded px-2 py-1 text-yellow-200 focus:outline-none focus:border-blue-400"
+                          />
+                        </div>
+                        <div>
+                          <span className="text-gray-400">Artwork:</span>{' '}
+                          <select
+                            value={card.artwork}
+                            onChange={(event) => updateCard(index, { artwork: event.target.value as ArtworkType })}
+                            className="ml-2 bg-transparent border border-white/10 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-400"
+                          >
+                            <option value="None">📄 Standard</option>
+                            <option value="Alternative">🎨 Alternatif</option>
+                            <option value="New">✨ Nouvel artwork</option>
+                          </select>
+                        </div>
+                        <div>
+                          <span className="text-gray-400">Type:</span>
+                          <input
+                            value={card.type}
+                            onChange={(event) => updateCard(index, { type: event.target.value })}
+                            className="ml-2 w-full bg-transparent border border-white/10 rounded px-2 py-1 text-purple-200 focus:outline-none focus:border-blue-400"
+                          />
+                        </div>
+                        <button
+                          onClick={() => removeCard(index)}
+                          className="mt-3 text-xs text-red-300 underline"
                         >
-                          {card.artwork || 'None'}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-gray-400">Type:</span>{' '}
-                        <span className="text-purple-300">{card.type}</span>
+                          Supprimer la ligne
+                        </button>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               {saveMessage && (
