@@ -1,62 +1,57 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+## Configuration rapide
 
-## Configuration de la base de données
+1. **Variables d’environnement**
+   ```bash
+   cp .env.example .env
+   # Renseignez DATABASE_URL (PostgreSQL local ou distant)
+   ```
 
-### 1. Configuration de l'environnement
-```bash
-# Copiez le fichier d'exemple
-cp .env.example .env
-# Modifiez le fichier .env avec vos paramètres de base de données
-```
+2. **Base PostgreSQL**
+   - macOS : `brew install postgresql@15 && brew services start postgresql@15`
+   - Windows : installez depuis [postgresql.org](https://www.postgresql.org/)
+   - Linux : `sudo apt install postgresql postgresql-contrib`
+   - Créez la base : `createdb yugioh_collection`
 
-### 2. Installation de PostgreSQL
-- **Windows**: Téléchargez et installez PostgreSQL depuis [postgresql.org](https://www.postgresql.org/download/windows/)
-- **macOS**: `brew install postgresql@15 && brew services start postgresql@15`
-- **Linux**: `sudo apt-get install postgresql postgresql-contrib` (Ubuntu/Debian)
+3. **Installation des dépendances**
+   ```bash
+   npm install
+   # déclenche automatiquement `prisma generate`
+   ```
 
-### 3. Création de la base de données
-```bash
-# Créez la base de données
-createdb yugioh_collection
+## Scripts utiles
 
-# Générez le client Prisma
-npx prisma generate
+| Commande              | Description |
+| --------------------- | ----------- |
+| `npm run dev`         | Démarre le serveur Next.js en mode dev (Turbopack) |
+| `npm run build`       | Build de production |
+| `npm run start`       | Démarre la version buildée |
+| `npm run lint`        | Lint TypeScript/React |
+| `npm run lint:fix`    | Lint + auto-fix |
+| `npm run test`        | Tests unitaires Vitest (`src/lib/*.test.ts`) |
+| `npm run db:migrate`  | `prisma migrate dev` (migrations locales) |
+| `npm run db:push`     | `prisma db push` (synchro schéma rapide) |
+| `npm run db:studio`   | Prisma Studio |
+| `npm run db:generate` | Génération manuelle du client Prisma |
 
-# Appliquez le schéma à la base de données
-npx prisma db push
-```
+> Astuce : définissez `NEXT_PUBLIC_PRISMA_LOG_QUERIES=true` dans votre `.env` pour afficher les requêtes SQL Prisma pendant le développement.
 
-## Getting Started
-
-First, run the development server:
+## Lancement
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+La page d’accueil liste les séries persistées. La page `convertisseur` permet :
+- soit de récupérer automatiquement un set depuis Yugipedia (`/api/fetch-cards` renvoie des cartes structurées),
+- soit de coller un `<tbody>` HTML pour l’analyser côté client avant sauvegarde dans la base (`/api/save-series`).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Qualité & Tests
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- ESLint + TypeScript strict.
+- Validation Zod sur les routes API (`/api/fetch-cards`, `/api/save-series`, `/api/carte-rarete/update`).
+- Tests unitaires Vitest pour la détection d’artworks et la normalisation des noms (`src/lib/card.test.ts`).
 
-## Learn More
+## Déploiement
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Le projet s’exécute sur Next.js 15 (App Router). Assurez-vous que la variable `DATABASE_URL` pointe vers une base accessible depuis votre environnement (Vercel/Render, etc.) avant de lancer `npm run build && npm run start`.

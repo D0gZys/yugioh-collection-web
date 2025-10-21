@@ -1,61 +1,50 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '../../../generated/prisma';
+import { prisma } from '@/lib/prisma';
+import { detectArtworkType, normalizeFrenchName } from '@/lib/card';
+import { z } from 'zod';
 
-const prisma = new PrismaClient();
+const cardDataSchema = z.object({
+  code: z.string().trim().min(1),
+  nameEnglish: z.string().trim().min(1),
+  nameFrench: z.string().trim().optional(),
+  rarity: z.string().trim().min(1),
+  type: z.string().trim().optional().default(''),
+  artwork: z.enum(['None', 'New', 'Alternative']).optional(),
+});
 
-// Fonction pour détecter le type d'artwork basé sur le code de carte
-function detectArtworkType(cardCode: string): string {
-  // Patterns courants pour les artworks alternatifs
-  const alternativePatterns = [
-    /-(AA|Alt|Alternative)$/i,  // Codes se terminant par AA, Alt, Alternative
-    /-A$/i,                     // Codes se terminant par -A
-    /\(Alt\)/i,                 // Codes contenant (Alt)
-    /Alternative/i              // Codes contenant "Alternative"
-  ];
-  
-  const newArtworkPatterns = [
-    /-(NEW|New)$/i,             // Codes se terminant par NEW
-    /-N$/i,                     // Codes se terminant par -N
-    /\(New\)/i                  // Codes contenant (New)
-  ];
-  
-  // Vérifier les patterns alternatifs
-  for (const pattern of alternativePatterns) {
-    if (pattern.test(cardCode)) {
-      return 'Alternative';
-    }
-  }
-  
-  // Vérifier les patterns new artwork
-  for (const pattern of newArtworkPatterns) {
-    if (pattern.test(cardCode)) {
-      return 'New';
-    }
-  }
-  
-  return 'None';
-}
-
-interface CardData {
-  code: string;
-  nameEnglish: string;
-  nameFrench: string;
-  rarity: string;
-  type: string;
-  artwork?: string; // None, New, Alternative
-}
-
-interface SaveSeriesRequest {
-  seriesCode: string;
-  seriesName: string;
-  sourceUrl: string;
-  cards: CardData[];
-}
+const saveSeriesSchema = z.object({
+  seriesCode: z.string().trim().min(1).max(10),
+  seriesName: z.string().trim().min(1),
+  sourceUrl: z.preprocess(
+    (value) => {
+      if (typeof value !== 'string') {
+        return null;
+      }
+      const normalized = value.trim();
+      return normalized.length === 0 ? null : normalized;
+    },
+    z.string().url().nullable()
+  ),
+  cards: z.array(cardDataSchema).min(1, 'Au moins une carte est requise'),
+});
 
 export async function POST(request: NextRequest) {
   try {
-    const data: SaveSeriesRequest = await request.json();
-    
+    const payload = await request.json();
+    const parsed = saveSeriesSchema.safeParse(payload);
+
+    if (!parsed.success) {
+      return NextResponse.json(
+        {
+          error: 'Données de requête invalides',
+          details: parsed.error.flatten(),
+        },
+        { status: 422 }
+      );
+    }
+
+    const data = parsed.data;
+
     console.log('📝 Réception des données:', {
       seriesCode: data.seriesCode,
       seriesName: data.seriesName,
@@ -111,16 +100,21 @@ export async function POST(request: NextRequest) {
       
       data.cards.forEach(card => {
         // Détecter le type d'artwork automatiquement ou utiliser celui fourni
-        const artworkType = card.artwork || detectArtworkType(card.code);
+        const artworkDetection = detectArtworkType({
+          code: card.code,
+          englishName: card.nameEnglish,
+        });
+        const artworkType = card.artwork || artworkDetection.artwork;
         const cardKey = `${card.code}_${artworkType}`;
+        const normalizedFrenchName = card.nameFrench ? normalizeFrenchName(card.nameFrench) : '';
         
         if (!cardMap.has(cardKey)) {
           cardMap.set(cardKey, {
-            code: card.code,
-            nameFrench: card.nameFrench,
-            nameEnglish: card.nameEnglish,
+            code: card.code.trim(),
+            nameFrench: normalizedFrenchName,
+            nameEnglish: artworkDetection.cleanedEnglishName,
             artwork: artworkType,
-            rarities: new Set()
+            rarities: new Set<string>()
           });
         }
         // Ajouter la rareté à cet ensemble
@@ -139,7 +133,7 @@ export async function POST(request: NextRequest) {
       // Créer les cartes uniques avec artwork
       const cardsToCreate = Array.from(cardMap.values()).map(card => ({
         numeroCarte: card.code,
-        nomCarte: card.nameFrench || card.nameEnglish, // Priorité au français
+        nomCarte: card.nameFrench && card.nameFrench.length > 0 ? card.nameFrench : card.nameEnglish,
         serieId: newSeries.id,
         artwork: card.artwork
       }));
@@ -183,7 +177,7 @@ export async function POST(request: NextRequest) {
       // 5. Créer les relations carte-rareté en utilisant notre cardMap
       let relationsCreated = 0;
       
-      for (const [cardKey, cardInfo] of cardMap) {
+      for (const [, cardInfo] of cardMap) {
         // Rechercher la carte correspondante par code ET artwork
         const correspondingCard = cards.find(card => 
           card.numeroCarte === cardInfo.code && 
@@ -273,7 +267,5 @@ export async function POST(request: NextRequest) {
       },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }

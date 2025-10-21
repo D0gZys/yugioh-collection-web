@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
+import { type ArtworkType } from '@/lib/card';
 
-interface CarteRarete {
+export interface CarteRarete {
   id: number;
   carteId: number;
   rareteId: number;
@@ -26,7 +27,7 @@ interface Carte {
   carteRaretes: CarteRarete[];
 }
 
-interface Serie {
+export interface Serie {
   id: number;
   codeSerie: string;
   nomSerie: string;
@@ -36,7 +37,7 @@ interface Serie {
   cartes: Carte[];
 }
 
-interface SerieClientProps {
+export interface SerieClientProps {
   initialSerie: Serie;
   initialStats: {
     totalCartes: number;
@@ -52,6 +53,9 @@ export default function SerieClient({ initialSerie, initialStats }: SerieClientP
   const [stats, setStats] = useState(initialStats);
   const [loadingStates, setLoadingStates] = useState<Record<number, boolean>>({});
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  const [selectedArtworks, setSelectedArtworks] = useState<ArtworkType[]>([]);
+  const [selectedRarities, setSelectedRarities] = useState<string[]>([]);
+  const [possessionFilter, setPossessionFilter] = useState<'all' | 'owned' | 'missing'>('all');
 
   // Fonction pour mettre à jour le statut de possession d'une carte
   const togglePossession = async (carteRareteId: number, currentStatus: boolean) => {
@@ -122,6 +126,84 @@ export default function SerieClient({ initialSerie, initialStats }: SerieClientP
       setLoadingStates(prev => ({ ...prev, [carteRareteId]: false }));
     }
   };
+
+  const availableArtworks = useMemo<ArtworkType[]>(() => {
+    const set = new Set<ArtworkType>();
+    serie.cartes.forEach((carte) => {
+      set.add((carte.artwork || 'None') as ArtworkType);
+    });
+    return Array.from(set);
+  }, [serie.cartes]);
+
+  const availableRarities = useMemo<string[]>(() => {
+    const set = new Set<string>();
+    serie.cartes.forEach((carte) => {
+      carte.carteRaretes.forEach((cr) => set.add(cr.rarete.nomRarete));
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'fr'));
+  }, [serie.cartes]);
+
+  const toggleArtwork = (artwork: ArtworkType) => {
+    setSelectedArtworks((prev) =>
+      prev.includes(artwork) ? prev.filter((item) => item !== artwork) : [...prev, artwork]
+    );
+  };
+
+  const toggleRarity = (rarity: string) => {
+    setSelectedRarities((prev) =>
+      prev.includes(rarity) ? prev.filter((item) => item !== rarity) : [...prev, rarity]
+    );
+  };
+
+  const clearFilters = () => {
+    setSelectedArtworks([]);
+    setSelectedRarities([]);
+    setPossessionFilter('all');
+  };
+
+  const filteredCards = useMemo(() => {
+    return serie.cartes
+      .map((carte) => {
+        const artworkType = (carte.artwork || 'None') as ArtworkType;
+        const matchesArtwork =
+          selectedArtworks.length === 0 || selectedArtworks.includes(artworkType);
+
+        if (!matchesArtwork) {
+          return null;
+        }
+
+        const filteredRaretes = carte.carteRaretes.filter((carteRarete) => {
+          const matchesRarity =
+            selectedRarities.length === 0 || selectedRarities.includes(carteRarete.rarete.nomRarete);
+
+          const matchesPossession =
+            possessionFilter === 'all' ||
+            (possessionFilter === 'owned' ? carteRarete.possedee : !carteRarete.possedee);
+
+          return matchesRarity && matchesPossession;
+        });
+
+        if (filteredRaretes.length === 0) {
+          return null;
+        }
+
+        return {
+          ...carte,
+          carteRaretes: filteredRaretes,
+        };
+      })
+      .filter(Boolean) as Carte[];
+  }, [serie.cartes, selectedArtworks, selectedRarities, possessionFilter]);
+
+  const filteredVersionsCount = filteredCards.reduce(
+    (total, carte) => total + carte.carteRaretes.length,
+    0
+  );
+
+  const filteredOwnedCount = filteredCards.reduce(
+    (total, carte) => total + carte.carteRaretes.filter((cr) => cr.possedee).length,
+    0
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-900 via-purple-900 to-indigo-900">
@@ -212,9 +294,125 @@ export default function SerieClient({ initialSerie, initialStats }: SerieClientP
           )}
         </header>
 
+        {/* Filtres */}
+        <section className="sticky top-4 z-10">
+          <div className="bg-white/10 backdrop-blur border border-white/20 rounded-xl p-4 shadow-lg shadow-black/20">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+              <h2 className="text-white font-semibold text-lg flex items-center gap-2">
+                🎛️ Filtres
+              </h2>
+              <div className="flex flex-wrap items-center gap-3 text-sm text-blue-200">
+                <span>
+                  {filteredCards.length} carte{filteredCards.length > 1 ? 's' : ''} affichée{filteredCards.length > 1 ? 's' : ''}
+                </span>
+                <span>•</span>
+                <span>
+                  {filteredVersionsCount} version{filteredVersionsCount > 1 ? 's' : ''} / {stats.cartesUniques}
+                </span>
+                <span>•</span>
+                <span>
+                  {filteredOwnedCount} possédée{filteredOwnedCount > 1 ? 's' : ''} / {stats.cartesPossedees}
+                </span>
+                {(selectedArtworks.length > 0 ||
+                  selectedRarities.length > 0 ||
+                  possessionFilter !== 'all') && (
+                  <button
+                    onClick={clearFilters}
+                    className="text-xs text-red-300 hover:text-red-200 underline underline-offset-4"
+                  >
+                    Réinitialiser
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-[repeat(12,minmax(0,1fr))]">
+              <div className="md:col-span-4">
+                <h3 className="text-sm text-blue-200 mb-2 uppercase tracking-wide">Artwork</h3>
+                <div className="flex flex-wrap gap-2">
+                  {availableArtworks.map((artwork) => {
+                    const isSelected = selectedArtworks.includes(artwork);
+                    const label =
+                      artwork === 'Alternative'
+                        ? '🎨 Alternatif'
+                        : artwork === 'New'
+                          ? '✨ Nouvel'
+                          : '📄 Standard';
+                    return (
+                      <button
+                        key={artwork}
+                        onClick={() => toggleArtwork(artwork)}
+                        className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors border ${
+                          isSelected
+                            ? 'bg-blue-500/40 border-blue-400 text-white'
+                            : 'bg-white/10 border-white/20 text-blue-200 hover:bg-white/20'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="md:col-span-5">
+                <h3 className="text-sm text-blue-200 mb-2 uppercase tracking-wide">Raretés</h3>
+                <div className="flex flex-wrap gap-2">
+                  {availableRarities.map((rarity) => {
+                    const isSelected = selectedRarities.includes(rarity);
+                    return (
+                      <button
+                        key={rarity}
+                        onClick={() => toggleRarity(rarity)}
+                        className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors border ${
+                          isSelected
+                            ? 'bg-purple-600/50 border-purple-400 text-white'
+                            : 'bg-white/10 border-white/20 text-purple-200 hover:bg-white/20'
+                        }`}
+                      >
+                        {rarity}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="md:col-span-3">
+                <h3 className="text-sm text-blue-200 mb-2 uppercase tracking-wide">Possession</h3>
+                <div className="grid grid-cols-3 gap-2 text-xs font-semibold">
+                  {[
+                    { value: 'all', label: 'Toutes' },
+                    { value: 'owned', label: 'Possédées' },
+                    { value: 'missing', label: 'Manquantes' },
+                  ].map(({ value, label }) => (
+                    <button
+                      key={value}
+                      onClick={() => setPossessionFilter(value as 'all' | 'owned' | 'missing')}
+                      className={`px-3 py-2 rounded-lg border transition-colors ${
+                        possessionFilter === value
+                          ? 'bg-green-500/40 border-green-400 text-white'
+                          : 'bg-white/10 border-white/20 text-green-200 hover:bg-white/20'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* Liste des cartes */}
-        <div className="space-y-4">
-          {serie.cartes.map((carte) => {
+        <div className="space-y-4 mt-6">
+          {filteredCards.length === 0 && (
+            <div className="text-center text-blue-200 bg-white/10 border border-white/10 rounded-xl py-8">
+              <p className="text-lg font-semibold">Aucune carte ne correspond à ces filtres.</p>
+              <p className="text-sm mt-2">Essayez d’élargir votre sélection ou réinitialisez les filtres.</p>
+            </div>
+          )}
+
+          {filteredCards.map((carte) => {
             // Vérifier si d'autres versions de cette carte existent (même code mais artwork différent)
             const autresVersions = serie.cartes.filter(c => 
               c.numeroCarte === carte.numeroCarte && c.id !== carte.id

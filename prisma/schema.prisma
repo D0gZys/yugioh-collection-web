@@ -1,3 +1,4 @@
+
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
@@ -6,7 +7,6 @@
 
 generator client {
   provider = "prisma-client-js"
-  output   = "../src/generated/prisma"
 }
 
 datasource db {
@@ -43,13 +43,16 @@ model Carte {
   carteRaretes CarteRarete[]
   
   @@unique([numeroCarte, serieId, artwork]) // Une carte unique par code + série + artwork
+  @@index([serieId])
+  @@index([serieId, numeroCarte])
+  @@index([serieId, artwork])
   @@map("cartes")
 }
 
 // Modèle pour les raretés
 model Rarete {
   id          Int     @id @default(autoincrement())
-  nomRarete   String  @map("nom_rarete") @db.VarChar(50)
+  nomRarete   String  @unique @map("nom_rarete") @db.VarChar(50)
   ordreTri    Int     @default(0) @map("ordre_tri")
   
   // Relations

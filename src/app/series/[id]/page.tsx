@@ -1,8 +1,6 @@
-import { PrismaClient } from '../../../generated/prisma';
+import { prisma } from '@/lib/prisma';
 import { notFound } from 'next/navigation';
-import SerieClient from './SerieClient';
-
-const prisma = new PrismaClient();
+import SerieClient, { type Serie as SerieClientSerie } from './SerieClient';
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -67,11 +65,24 @@ export default async function SeriePage({ params }: PageProps) {
     artworkStats
   };
 
-  await prisma.$disconnect();
+  const serializedSerie: SerieClientSerie = {
+    ...serie,
+    dateAjout: serie.dateAjout.toISOString(),
+    cartes: serie.cartes.map((carte) => ({
+      ...carte,
+      carteRaretes: carte.carteRaretes.map((carteRarete) => ({
+        ...carteRarete,
+        dateAcquisition: carteRarete.dateAcquisition
+          ? carteRarete.dateAcquisition.toISOString()
+          : null,
+        prixAchat: carteRarete.prixAchat !== null ? Number(carteRarete.prixAchat) : null,
+      })),
+    })),
+  };
 
   return (
     <SerieClient 
-      initialSerie={serie as any} 
+      initialSerie={serializedSerie} 
       initialStats={initialStats}
     />
   );

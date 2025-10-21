@@ -1,9 +1,7 @@
-import { PrismaClient } from '../generated/prisma';
+import { prisma } from "@/lib/prisma";
 import Link from 'next/link';
 
-const prisma = new PrismaClient();
-
-type SeriesWithCount = {
+type SeriesWithStats = {
   id: number;
   codeSerie: string;
   nomSerie: string;
@@ -13,37 +11,48 @@ type SeriesWithCount = {
   _count: {
     cartes: number;
   };
-  cartes: {
-    artwork: string;
-  }[];
+  artworkStats: Record<string, number>;
 };
 
 export default async function Home() {
-  let series: SeriesWithCount[] = [];
+  let series: SeriesWithStats[] = [];
   let hasDbError = false;
 
   try {
     // Récupérer toutes les séries avec le nombre de cartes et les statistiques d'artwork
-    series = await prisma.series.findMany({
-      include: {
-        _count: {
-          select: { cartes: true }
+    const [rawSeries, artworkGroups] = await Promise.all([
+      prisma.series.findMany({
+        include: {
+          _count: {
+            select: { cartes: true },
+          },
         },
-        cartes: {
-          select: {
-            artwork: true
-          }
-        }
-      },
-      orderBy: {
-        nomSerie: 'asc'
-      }
-    });
+        orderBy: {
+          nomSerie: 'asc',
+        },
+      }),
+      prisma.carte.groupBy({
+        by: ['serieId', 'artwork'],
+        _count: {
+          _all: true,
+        },
+      }),
+    ]);
+
+    const artworkStatsBySerie = new Map<number, Record<string, number>>();
+    for (const group of artworkGroups) {
+      const currentStats = artworkStatsBySerie.get(group.serieId) ?? {};
+      currentStats[group.artwork ?? 'None'] = group._count._all;
+      artworkStatsBySerie.set(group.serieId, currentStats);
+    }
+
+    series = rawSeries.map((serie) => ({
+      ...serie,
+      artworkStats: artworkStatsBySerie.get(serie.id) ?? {},
+    }));
   } catch (error) {
     console.error('Erreur de base de données:', error);
     hasDbError = true;
-  } finally {
-    await prisma.$disconnect();
   }
 
   return (
@@ -79,7 +88,7 @@ export default async function Home() {
         {/* Grille des séries */}
         {hasDbError ? (
           <div className="text-center text-gray-300">
-            <p className="mb-4">La base de données n'est pas accessible pour le moment.</p>
+            <p className="mb-4">La base de données n&apos;est pas accessible pour le moment.</p>
             <p className="text-sm text-gray-400">
               Commandes pour résoudre le problème :
             </p>
@@ -93,13 +102,7 @@ export default async function Home() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {series.map((serie) => {
-              // Calculer les statistiques d'artwork pour cette série
-              const artworkStats = serie.cartes.reduce((acc, carte) => {
-                const artworkType = carte.artwork || 'None';
-                acc[artworkType] = (acc[artworkType] || 0) + 1;
-                return acc;
-              }, {} as Record<string, number>);
-
+              const artworkStats = serie.artworkStats;
               const hasSpecialArtworks = artworkStats['Alternative'] || artworkStats['New'];
 
               return (
