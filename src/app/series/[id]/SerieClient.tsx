@@ -56,6 +56,7 @@ export default function SerieClient({ initialSerie, initialStats }: SerieClientP
   const [selectedArtworks, setSelectedArtworks] = useState<ArtworkType[]>([]);
   const [selectedRarities, setSelectedRarities] = useState<string[]>([]);
   const [possessionFilter, setPossessionFilter] = useState<'all' | 'owned' | 'missing'>('all');
+  const [searchTerm, setSearchTerm] = useState('');
 
   // Fonction pour mettre à jour le statut de possession d'une carte
   const togglePossession = async (carteRareteId: number, currentStatus: boolean) => {
@@ -159,9 +160,12 @@ export default function SerieClient({ initialSerie, initialStats }: SerieClientP
     setSelectedArtworks([]);
     setSelectedRarities([]);
     setPossessionFilter('all');
+    setSearchTerm('');
   };
 
   const filteredCards = useMemo(() => {
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+
     return serie.cartes
       .map((carte) => {
         const artworkType = (carte.artwork || 'None') as ArtworkType;
@@ -180,7 +184,13 @@ export default function SerieClient({ initialSerie, initialStats }: SerieClientP
             possessionFilter === 'all' ||
             (possessionFilter === 'owned' ? carteRarete.possedee : !carteRarete.possedee);
 
-          return matchesRarity && matchesPossession;
+          const matchesSearch =
+            normalizedSearch.length === 0 ||
+            carte.nomCarte.toLowerCase().includes(normalizedSearch) ||
+            carte.numeroCarte.toLowerCase().includes(normalizedSearch) ||
+            carteRarete.rarete.nomRarete.toLowerCase().includes(normalizedSearch);
+
+          return matchesRarity && matchesPossession && matchesSearch;
         });
 
         if (filteredRaretes.length === 0) {
@@ -193,7 +203,7 @@ export default function SerieClient({ initialSerie, initialStats }: SerieClientP
         };
       })
       .filter(Boolean) as Carte[];
-  }, [serie.cartes, selectedArtworks, selectedRarities, possessionFilter]);
+  }, [serie.cartes, selectedArtworks, selectedRarities, possessionFilter, searchTerm]);
 
   const filteredVersionsCount = filteredCards.reduce(
     (total, carte) => total + carte.carteRaretes.length,
@@ -397,6 +407,20 @@ export default function SerieClient({ initialSerie, initialStats }: SerieClientP
                       {label}
                     </button>
                   ))}
+                </div>
+              </div>
+
+              <div className="md:col-span-12">
+                <h3 className="text-sm text-blue-200 mb-2 uppercase tracking-wide">Recherche rapide</h3>
+                <div className="relative">
+                  <input
+                    type="search"
+                    value={searchTerm}
+                    onChange={(event) => setSearchTerm(event.target.value)}
+                    placeholder="Nom de carte, numéro ou rareté…"
+                    className="w-full bg-white/10 border border-white/20 rounded-lg py-2.5 pl-10 pr-3 text-white placeholder:text-blue-200/60 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+                  />
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-200">🔍</span>
                 </div>
               </div>
             </div>
