@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   detectArtworkType,
   normalizeCardName,
@@ -144,6 +144,11 @@ export default function ConvertisseurPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [recentUrls, setRecentUrls] = useState<string[]>([]);
   const STORAGE_KEY = 'convertisseur:last-imports';
+  const STATE_KEY = 'convertisseur:last-state';
+  const [isStateRestored, setIsStateRestored] = useState(false);
+  const [showOnlyDuplicates, setShowOnlyDuplicates] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null);
+  const highlightTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     const stored = (typeof window !== 'undefined' && window.localStorage.getItem(STORAGE_KEY)) || null;
@@ -158,6 +163,55 @@ export default function ConvertisseurPage() {
       }
     }
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      const storedState = window.localStorage.getItem(STATE_KEY);
+      if (storedState) {
+        const parsed = JSON.parse(storedState) as Partial<{
+          text: string;
+          url: string;
+          extractedCards: Card[];
+        }>;
+
+        if (parsed.text) setText(parsed.text);
+        if (parsed.url) setUrl(parsed.url);
+        if (Array.isArray(parsed.extractedCards)) setExtractedCards(parsed.extractedCards);
+      }
+    } catch (error) {
+      console.warn('Impossible de restaurer le dernier état', error);
+    } finally {
+      setIsStateRestored(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isStateRestored || typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      if (!text && !url && extractedCards.length === 0) {
+        window.localStorage.removeItem(STATE_KEY);
+        return;
+      }
+
+      window.localStorage.setItem(
+        STATE_KEY,
+        JSON.stringify({
+          text,
+          url,
+          extractedCards,
+        }),
+      );
+    } catch (error) {
+      console.warn('Impossible de sauvegarder l’état du convertisseur', error);
+    }
+  }, [text, url, extractedCards, isStateRestored]);
 
   const artworkOptions = useMemo<ArtworkType[]>(() => {
     const set = new Set<ArtworkType>();
@@ -183,21 +237,80 @@ export default function ConvertisseurPage() {
       New: 0,
       Alternative: 0,
     };
+    const codeOccurrences = new Map<string, number>();
 
     extractedCards.forEach((card) => {
       codes.add(card.code);
       rarityCount[card.rarity] = (rarityCount[card.rarity] || 0) + 1;
       artworkCount[card.artwork] = (artworkCount[card.artwork] || 0) + 1;
+      codeOccurrences.set(card.code, (codeOccurrences.get(card.code) || 0) + 1);
     });
+
+    const duplicateEntries = Array.from(codeOccurrences.entries())
+      .filter(([, count]) => count > 1)
+      .map(([code, count]) => ({ code, count }));
+
+    const duplicates = duplicateEntries.reduce((total, entry) => total + (entry.count - 1), 0);
 
     return {
       totalEntries: extractedCards.length,
       uniqueCodes: codes.size,
-      duplicates: Math.max(extractedCards.length - codes.size, 0),
+      duplicates,
       rarityCount,
       artworkCount,
+      duplicateEntries,
     };
   }, [extractedCards]);
+
+  const duplicateCodeSet = useMemo(() => {
+    return new Set(summaryStats.duplicateEntries.map((entry) => entry.code));
+  }, [summaryStats.duplicateEntries]);
+
+  useEffect(() => {
+    if (summaryStats.duplicates === 0 && showOnlyDuplicates) {
+      setShowOnlyDuplicates(false);
+    }
+  }, [summaryStats.duplicates, showOnlyDuplicates]);
+
+  useEffect(() => {
+    return () => {
+      if (typeof window !== 'undefined' && highlightTimeoutRef.current !== null) {
+        window.clearTimeout(highlightTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const scrollToCardIndex = (index: number) => {
+    if (typeof window === 'undefined' || index < 0) {
+      return;
+    }
+
+    const desktopRow = document.getElementById(`card-row-${index}`);
+    const mobileRow = document.getElementById(`card-row-mobile-${index}`);
+    const target = desktopRow ?? mobileRow;
+
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  };
+
+  const triggerHighlight = (index: number) => {
+    if (index < 0) {
+      return;
+    }
+
+    if (typeof window !== 'undefined') {
+      scrollToCardIndex(index);
+      if (highlightTimeoutRef.current !== null) {
+        window.clearTimeout(highlightTimeoutRef.current);
+      }
+      setHighlightedIndex(index);
+      highlightTimeoutRef.current = window.setTimeout(() => {
+        setHighlightedIndex(null);
+        highlightTimeoutRef.current = null;
+      }, 2500);
+    }
+  };
 
   const showMessage = (message: { type: 'success' | 'error'; text: string }, duration = 5000) => {
     setSaveMessage(message);
@@ -206,9 +319,12 @@ export default function ConvertisseurPage() {
     }
   };
 
-  const handleFetchFromUrl = async () => {
+  const handleFetchFromUrl = async (event?: FormEvent<HTMLFormElement>) => {
+    event?.preventDefault();
     const trimmedUrl = url.trim();
     if (!trimmedUrl) return;
+
+    if (isLoading) return;
 
     setIsLoading(true);
     setSaveMessage(null);
@@ -226,6 +342,10 @@ export default function ConvertisseurPage() {
 
       if (!response.ok || 'error' in data) {
         throw new Error(('error' in data && data.error) || 'Erreur lors de la récupération');
+      }
+
+      if (typeof window !== 'undefined') {
+        window.localStorage.removeItem(STATE_KEY);
       }
 
       setExtractedCards(data.cards);
@@ -266,9 +386,10 @@ export default function ConvertisseurPage() {
 
     const invalidIndex = extractedCards.findIndex((card) => !isCardValid(card));
     if (invalidIndex !== -1) {
+      triggerHighlight(invalidIndex);
       showMessage({
         type: 'error',
-        text: 'Certaines cartes sont incomplètes. Vérifiez les codes, noms et raretés avant de sauvegarder.',
+        text: `Carte incomplète détectée ligne ${invalidIndex + 1}. Vérifiez code, nom anglais et rareté.`,
       });
       return;
     }
@@ -382,9 +503,12 @@ export default function ConvertisseurPage() {
           card.nameFrench.toLowerCase().includes(normalizedSearch) ||
           card.rarity.toLowerCase().includes(normalizedSearch);
 
-        return matchesArtwork && matchesRarity && matchesSearch;
+        const matchesDuplicates =
+          !showOnlyDuplicates || duplicateCodeSet.has(card.code);
+
+        return matchesArtwork && matchesRarity && matchesSearch && matchesDuplicates;
       });
-  }, [extractedCards, selectedArtworks, selectedRarities, normalizedSearch]);
+  }, [extractedCards, selectedArtworks, selectedRarities, normalizedSearch, showOnlyDuplicates, duplicateCodeSet]);
 
   const derivedSeriesName = extractSeriesNameFromUrl(url);
 
@@ -409,24 +533,28 @@ export default function ConvertisseurPage() {
         </div>
 
         <div className="max-w-4xl mx-auto space-y-6">
-          <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-6">
-            <h2 className="text-2xl font-semibold text-white mb-4">🌐 Récupération automatique depuis URL</h2>
-            <div className="flex flex-col sm:flex-row gap-4">
-              <input
-                type="url"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://yugipedia.com/wiki/Set_Card_Lists:..."
-                className="flex-1 p-3 bg-white/10 border border-white/30 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
-              />
-              <button
-                onClick={handleFetchFromUrl}
-                disabled={!url.trim() || isLoading}
-                className="px-6 py-3 bg-gradient-to-r from-green-500 to-teal-600 text-white font-semibold rounded-lg hover:from-green-600 hover:to-teal-700 transform hover:scale-105 transition-all shadow-lg disabled:from-gray-500 disabled:to-gray-600 disabled:cursor-not-allowed disabled:transform-none"
-              >
-                {isLoading ? '⏳ Récupération...' : '� Récupérer'}
-              </button>
-            </div>
+          <div className="relative bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-6 overflow-hidden">
+            <form onSubmit={handleFetchFromUrl} className="space-y-4">
+              <h2 className="text-2xl font-semibold text-white">🌐 Récupération automatique depuis URL</h2>
+              <div className="flex flex-col sm:flex-row gap-4">
+                <input
+                  type="url"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  placeholder="https://yugipedia.com/wiki/Set_Card_Lists:..."
+                  className="flex-1 p-3 bg-white/10 border border-white/30 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+                  aria-label="URL Yugipedia"
+                />
+                <button
+                  type="submit"
+                  disabled={!url.trim() || isLoading}
+                  className="px-6 py-3 bg-gradient-to-r from-green-500 to-teal-600 text-white font-semibold rounded-lg hover:from-green-600 hover:to-teal-700 transform hover:scale-105 transition-all shadow-lg disabled:from-gray-500 disabled:to-gray-600 disabled:cursor-not-allowed disabled:transform-none"
+                >
+                  {isLoading ? '⏳ Récupération...' : '🔄 Récupérer'}
+                </button>
+              </div>
+            </form>
+
             {recentUrls.length > 0 && (
               <div className="mt-3 text-sm text-blue-200 flex flex-wrap items-center gap-2">
                 <span className="opacity-70">Dernières importations :</span>
@@ -439,6 +567,15 @@ export default function ConvertisseurPage() {
                     {recentUrl.length > 45 ? `${recentUrl.slice(0, 42)}…` : recentUrl}
                   </button>
                 ))}
+              </div>
+            )}
+
+            {isLoading && (
+              <div className="absolute inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center text-blue-50 text-sm font-medium">
+                <div className="flex items-center gap-2">
+                  <span className="animate-spin">⏳</span>
+                  <span>Récupération en cours…</span>
+                </div>
               </div>
             )}
           </div>
@@ -536,8 +673,32 @@ export default function ConvertisseurPage() {
                     <div className="text-sm text-blue-200 uppercase tracking-wide">Codes uniques</div>
                     <div className="text-2xl font-semibold text-white mt-1">{summaryStats.uniqueCodes}</div>
                     <div className="text-xs text-blue-300 mt-1">
-                      {summaryStats.duplicates} doublon{summaryStats.duplicates > 1 ? 's' : ''}
+                      {summaryStats.duplicates > 0
+                        ? `${summaryStats.duplicates} doublon${summaryStats.duplicates > 1 ? 's' : ''} potentiel${summaryStats.duplicates > 1 ? 's' : ''}`
+                        : 'Aucun doublon détecté'}
                     </div>
+                    {summaryStats.duplicateEntries.length > 0 && (
+                      <>
+                        <div className="mt-2 text-xs text-blue-200">
+                          {summaryStats.duplicateEntries
+                            .slice(0, 3)
+                            .map(({ code, count }) => `${code} ×${count}`)
+                            .join(' • ')}
+                          {summaryStats.duplicateEntries.length > 3 ? '…' : ''}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowOnlyDuplicates((prev) => !prev)}
+                          className={`mt-3 text-xs font-semibold px-3 py-1 rounded-full border transition-colors ${
+                            showOnlyDuplicates
+                              ? 'bg-orange-500/30 border-orange-400 text-white'
+                              : 'bg-white/10 border-white/20 text-blue-200 hover:bg-white/20'
+                          }`}
+                        >
+                          {showOnlyDuplicates ? 'Afficher toutes les cartes' : 'Voir uniquement les doublons'}
+                        </button>
+                      </>
+                    )}
                   </div>
                   <div className="bg-white/5 border border-white/10 rounded-lg p-4">
                     <div className="text-sm text-blue-200 uppercase tracking-wide">Raretés</div>
@@ -566,7 +727,7 @@ export default function ConvertisseurPage() {
 
                 {summaryStats.duplicates > 0 && (
                   <div className="bg-orange-600/20 border border-orange-500/40 text-orange-200 rounded-lg px-4 py-3 text-sm">
-                    ⚠️ {summaryStats.duplicates} doublon{summaryStats.duplicates > 1 ? 's' : ''} détecté{summaryStats.duplicates > 1 ? 's' : ''}. Vérifiez les codes ou artworks avant de sauvegarder.
+                    ⚠️ {summaryStats.duplicates} doublon{summaryStats.duplicates > 1 ? 's' : ''} détecté{summaryStats.duplicates > 1 ? 's' : ''}. Utilisez le filtre « Voir uniquement les doublons » pour les isoler avant sauvegarde.
                   </div>
                 )}
 
@@ -661,19 +822,36 @@ export default function ConvertisseurPage() {
                   <tbody>
                     {filteredCards.map(({ card, index }) => {
                       const rowHasError = !isCardValid(card);
+                      const rowIsDuplicate = duplicateCodeSet.has(card.code);
+                      const isHighlighted = highlightedIndex === index;
+                      const rowClass = [
+                        'border-b border-white/10 hover:bg-white/5 transition-colors scroll-mt-32',
+                        rowHasError ? 'bg-red-900/25 border-red-500/40' : '',
+                        rowIsDuplicate ? 'bg-orange-500/15' : '',
+                        isHighlighted ? 'outline outline-2 outline-red-400/70 outline-offset-2' : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' ');
+
                       return (
                         <tr
                           key={`${index}-${card.code}-${card.artwork}-${card.rarity}`}
-                          className={`border-b border-white/10 hover:bg-white/5 transition-colors ${
-                            rowHasError ? 'bg-red-900/20' : ''
-                          }`}
+                          id={`card-row-${index}`}
+                          className={rowClass}
                         >
                           <td className="p-3">
-                            <input
-                              value={card.code}
-                              onChange={(event) => updateCard(index, { code: event.target.value })}
-                              className="w-full bg-transparent border border-white/10 rounded px-2 py-1 text-blue-200 focus:outline-none focus:border-blue-400"
-                            />
+                            <div className="flex items-center gap-2">
+                              <input
+                                value={card.code}
+                                onChange={(event) => updateCard(index, { code: event.target.value })}
+                                className="w-full flex-1 bg-transparent border border-white/10 rounded px-2 py-1 text-blue-200 focus:outline-none focus:border-blue-400"
+                              />
+                              {rowIsDuplicate && (
+                                <span className="shrink-0 text-[10px] uppercase tracking-wide bg-orange-600/30 border border-orange-400/50 text-orange-200 px-2 py-0.5 rounded-full">
+                                  Doublon
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="p-3">
                             <input

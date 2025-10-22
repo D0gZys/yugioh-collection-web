@@ -12,6 +12,9 @@ type SeriesWithStats = {
     cartes: number;
   };
   artworkStats: Record<string, number>;
+  totalVersions: number;
+  ownedVersions: number;
+  completionRate: number;
 };
 
 export default async function Home() {
@@ -23,6 +26,15 @@ export default async function Home() {
     const [rawSeries, artworkGroups] = await Promise.all([
       prisma.series.findMany({
         include: {
+          cartes: {
+            select: {
+              carteRaretes: {
+                select: {
+                  possedee: true,
+                },
+              },
+            },
+          },
           _count: {
             select: { cartes: true },
           },
@@ -46,10 +58,23 @@ export default async function Home() {
       artworkStatsBySerie.set(group.serieId, currentStats);
     }
 
-    series = rawSeries.map((serie) => ({
-      ...serie,
-      artworkStats: artworkStatsBySerie.get(serie.id) ?? {},
-    }));
+    series = rawSeries.map((serie) => {
+      const { cartes, ...serieData } = serie;
+      const totalVersions = cartes.reduce((acc, carte) => acc + carte.carteRaretes.length, 0);
+      const ownedVersions = cartes.reduce(
+        (acc, carte) => acc + carte.carteRaretes.filter((rarete) => rarete.possedee).length,
+        0,
+      );
+      const completionRate = totalVersions > 0 ? (ownedVersions / totalVersions) * 100 : 0;
+
+      return {
+        ...serieData,
+        artworkStats: artworkStatsBySerie.get(serie.id) ?? {},
+        totalVersions,
+        ownedVersions,
+        completionRate,
+      };
+    });
   } catch (error) {
     console.error('Erreur de base de données:', error);
     hasDbError = true;
@@ -60,12 +85,20 @@ export default async function Home() {
       <div className="container mx-auto px-4 py-8">
         {/* Navigation */}
         <nav className="flex justify-end mb-6">
-          <Link 
-            href="/convertisseur" 
-            className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2"
-          >
-            🔄 Convertisseur
-          </Link>
+          <div className="flex flex-wrap gap-3">
+            <Link 
+              href="/statistiques" 
+              className="bg-white/10 hover:bg-white/20 text-blue-100 px-4 py-2 rounded-lg transition-colors flex items-center gap-2 border border-white/10"
+            >
+              📈 Statistiques
+            </Link>
+            <Link 
+              href="/convertisseur" 
+              className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2"
+            >
+              🔄 Convertisseur
+            </Link>
+          </div>
         </nav>
 
         {/* Header */}
@@ -104,6 +137,8 @@ export default async function Home() {
             {series.map((serie) => {
               const artworkStats = serie.artworkStats;
               const hasSpecialArtworks = artworkStats['Alternative'] || artworkStats['New'];
+              const hasProgressData = serie.totalVersions > 0;
+              const completionPercent = hasProgressData ? Math.round(serie.completionRate) : 0;
 
               return (
                 <Link key={serie.id} href={`/series/${serie.id}`}>
@@ -146,6 +181,34 @@ export default async function Home() {
                           )}
                         </div>
                       )}
+
+                      <div className="pt-3">
+                        <div className="flex items-center justify-between text-xs uppercase tracking-wide text-blue-200">
+                          <span>Complétion</span>
+                          {hasProgressData
+                            ? (
+                              <span className="text-white font-semibold">
+                                {serie.ownedVersions}/{serie.totalVersions}
+                                <span className="ml-2 text-xs text-blue-300 font-medium">
+                                  ({completionPercent}%)
+                                </span>
+                              </span>
+                            )
+                            : (
+                              <span className="text-blue-300">En attente</span>
+                            )}
+                        </div>
+                        <div className="mt-2 h-2 rounded-full bg-white/10 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-500 ${
+                              completionPercent >= 100
+                                ? 'bg-green-500'
+                                : 'bg-gradient-to-r from-green-400 to-blue-500'
+                            }`}
+                            style={{ width: `${hasProgressData ? Math.min(100, completionPercent) : 0}%` }}
+                          />
+                        </div>
+                      </div>
                       
                       {serie.urlSource && (
                         <p className="text-xs text-blue-300 truncate mt-3">

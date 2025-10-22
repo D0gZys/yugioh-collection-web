@@ -1,65 +1,135 @@
-## Configuration rapide
+<div align="center">
 
-1. **Variables d’environnement**
-   ```bash
-   cp .env.example .env
-   # Renseignez DATABASE_URL (PostgreSQL local ou distant)
-   ```
+# 📚 Yu-Gi-Oh! Collection Web
 
-2. **Base PostgreSQL**
-   - macOS : `brew install postgresql@15 && brew services start postgresql@15`
-   - Windows : installez depuis [postgresql.org](https://www.postgresql.org/)
-   - Linux : `sudo apt install postgresql postgresql-contrib`
-   - Créez la base : `createdb yugioh_collection`
+Application Next.js 15 (App Router) pour piloter une collection de cartes Yu-Gi-Oh!, importer des séries depuis Yugipedia et suivre l’avancement de la complétion.
 
-3. **Installation des dépendances**
-   ```bash
-   npm install
-   # déclenche automatiquement `prisma generate`
-   ```
+</div>
 
-## Scripts utiles
+---
 
-| Commande              | Description |
-| --------------------- | ----------- |
-| `npm run dev`         | Démarre le serveur Next.js en mode dev (Turbopack) |
-| `npm run build`       | Build de production |
-| `npm run start`       | Démarre la version buildée |
-| `npm run lint`        | Lint TypeScript/React |
-| `npm run lint:fix`    | Lint + auto-fix |
-| `npm run test`        | Tests unitaires Vitest (`src/lib/*.test.ts`) |
-| `npm run db:migrate`  | `prisma migrate dev` (migrations locales) |
-| `npm run db:push`     | `prisma db push` (synchro schéma rapide) |
-| `npm run db:studio`   | Prisma Studio |
-| `npm run db:generate` | Génération manuelle du client Prisma |
+## ✨ Fonctionnalités principales
 
-> Astuce : définissez `NEXT_PUBLIC_PRISMA_LOG_QUERIES=true` dans votre `.env` pour afficher les requêtes SQL Prisma pendant le développement.
+- **Tableau de bord collection**
+  - Liste des séries triées par nom avec code, nombre de cartes et jauge de complétion (calcul possédé / versions suivies).
+  - Accès rapide au convertisseur et aux statistiques.
 
-## Lancement
+- **Page série**
+  - Filtres avancés (artwork, rareté, possession, recherche texte).
+  - Mise à jour en un clic de la possession d’une version (API Prisma).
+  - Statistiques globales (complétion, répartitions d’artworks, progression).
+
+- **Convertisseur intelligent**
+  - Import automatique via URL Yugipedia ou collage d’un `<tbody>` HTML.
+  - Détection des artworks, raretés et doublons, édition inline, filtres, historique local.
+  - Persistance locale de l’état (HTML, URL, cartes) pour éviter toute perte avant sauvegarde.
+  - Isolement des doublons et mise en évidence des lignes invalides via scroll automatique.
+
+- **Page statistiques**
+  - Agrégations Prisma (séries, cartes, raretés, artworks, complétion globale).
+  - Graphiques CSS/SVG légers : distribution des raretés, répartition des artworks, activité 6 derniers mois.
+  - Liste des séries les plus avancées pour prioriser les complétions.
+
+## 🧱 Stack technique
+
+- **Framework** : Next.js 15 (App Router) + React 19.
+- **Base de données** : PostgreSQL (Prisma ORM).
+- **Styling** : Tailwind CSS (classes utilitaires custom) + effets verre dépoli.
+- **Tests** : Vitest.
+- **Lint** : ESLint config Next.js.
+
+## 🚀 Démarrage rapide
+
+### 1. Pré-requis
+
+- Node.js 20+
+- PostgreSQL 15+ (ou service hébergé)
+
+### 2. Variables d’environnement
+
+```bash
+cp .env.example .env
+# renseignez DATABASE_URL, ex :
+# postgres://user:password@localhost:5432/yugioh_collection
+```
+
+### 3. Base de données
+
+```bash
+# macOS
+brew install postgresql@15 && brew services start postgresql@15
+
+# Linux
+sudo apt install postgresql postgresql-contrib
+
+# Windows : installez depuis postgresql.org
+
+createdb yugioh_collection
+```
+
+### 4. Installation & migrations
+
+```bash
+npm install         # exécute automatiquement prisma generate
+npm run db:migrate  # applique les migrations locales
+```
+
+### 5. Lancer l’app
 
 ```bash
 npm run dev
 # http://localhost:3000
 ```
 
-La page d’accueil liste les séries persistées. La page `convertisseur` permet :
-- soit de récupérer automatiquement un set depuis Yugipedia (`/api/fetch-cards` renvoie des cartes structurées),
-- soit de coller un `<tbody>` HTML pour l’analyser côté client avant sauvegarde dans la base (`/api/save-series`).
+> Astuce : définissez `NEXT_PUBLIC_PRISMA_LOG_QUERIES=true` dans `.env` pour afficher toutes les requêtes Prisma en dev.
 
-### Convertisseur : confort & contrôle
+## 📂 Structure du projet
 
-- **Synthèse instantanée** : codes uniques, raretés détectées, artworks et doublons sont affichés en tête.
-- **Filtres dynamiques** : recherche par nom/numéro, filtres par artwork & rareté, réinitialisation rapide.
-- **Édition inline** : toutes les colonnes sont modifiables (code, noms, rareté, artwork, type) avec surlignage des entrées incomplètes et suppression par ligne.
-- **Historique local** : les dernières URLs importées sont mémorisées (localStorage) pour relancer un import en un clic.
-- **Validation stricte** : la sauvegarde est bloquée tant qu’une carte est incomplète ; les doublons sont signalés dans le résumé.
+```
+src/
+ ├─ app/               # Routes App Router (accueil, convertisseur, statistiques, série/[id])
+ ├─ lib/               # Helpers (normalisation noms, détection artworks, Prisma client…)
+ └─ generated/         # Artefacts Prisma (client)
 
-## Qualité & Tests
+prisma/
+ └─ schema.prisma      # Modèle Series / Carte / Rarete / CarteRarete
+```
 
-- ESLint + TypeScript strict.
-- Validation Zod sur les routes API (`/api/fetch-cards`, `/api/save-series`, `/api/carte-rarete/update`).
-- Tests unitaires Vitest pour la détection d’artworks et la normalisation des noms (`src/lib/card.test.ts`).
+## 🛠️ Scripts npm
 
-## Déploiement
+| Commande              | Description |
+| --------------------- | ----------- |
+| `npm run dev`         | Next.js en mode développement (Turbopack) |
+| `npm run build`       | Build de production |
+| `npm run start`       | Lance le build |
+| `npm run lint`        | Lint TypeScript + React |
+| `npm run lint:fix`    | Lint avec auto-fix |
+| `npm run test`        | Tests unitaires Vitest (`src/lib/*.test.ts`) |
+| `npm run db:migrate`  | `prisma migrate dev` (migrations locales) |
+| `npm run db:push`     | `prisma db push` (sync schéma rapide) |
+| `npm run db:studio`   | Prisma Studio |
+| `npm run db:generate` | Génération manuelle du client Prisma |
 
-Le projet s’exécute sur Next.js 15 (App Router). Assurez-vous que la variable `DATABASE_URL` pointe vers une base accessible depuis votre environnement (Vercel/Render, etc.) avant de lancer `npm run build && npm run start`.
+## ✅ Qualité & tests
+
+- Typescript strict, ESLint (config Next).
+- Tests Vitest pour la détection d’artworks et la normalisation des noms (`src/lib/card.test.ts`).
+- Schemas Zod côté API (`/api/fetch-cards`, `/api/save-series`, `/api/carte-rarete/update`).
+- CI locale : `npm run lint`, `npm run test`.
+
+## 📊 Alimentation de la base
+
+1. Importez une série via le convertisseur (URL Yugipedia ou HTML).
+2. Vérifiez les doublons / lignes invalides.
+3. Sauvegardez : les cartes et raretés sont créées en base, la page d’accueil se met à jour.
+
+Les jauges de complétion exploitent les `CarteRarete.possedee` : modifiez les statuts depuis la page série pour refléter votre collection.
+
+## 🔧 Déploiement
+
+L’application tourne en production via `npm run build && npm run start`.  
+Assurez-vous que `DATABASE_URL` pointe vers une instance PostgreSQL accessible publiquement (Vercel, Render, Railway, etc.) et que les migrations ont été exécutées (`npm run db:migrate`).
+
+---
+
+Bon build et bonne complétion de collection ! 😊
