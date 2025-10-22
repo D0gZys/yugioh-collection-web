@@ -12,6 +12,7 @@ Application Next.js 15 (App Router) pour piloter une collection de cartes Yu-Gi-
 
 - **Tableau de bord collection**
   - Liste des séries triées par nom avec code, nombre de cartes et jauge de complétion (calcul possédé / versions suivies).
+  - Barre de recherche « bulle » pour filtrer instantanément par nom ou code de série.
   - Accès rapide au convertisseur et aux statistiques.
 
 - **Page série**
