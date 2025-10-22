@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { type ArtworkType } from '@/lib/card';
 
@@ -57,6 +57,21 @@ export default function SerieClient({ initialSerie, initialStats }: SerieClientP
   const [selectedRarities, setSelectedRarities] = useState<string[]>([]);
   const [possessionFilter, setPossessionFilter] = useState<'all' | 'owned' | 'missing'>('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [isFilterCompact, setIsFilterCompact] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const shouldCompact = window.scrollY > 140;
+      setIsFilterCompact(prev => (prev === shouldCompact ? prev : shouldCompact));
+    };
+
+    handleScroll();
+    window.addEventListener('scroll', handleScroll, { passive: true });
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+    };
+  }, []);
 
   // Fonction pour mettre à jour le statut de possession d'une carte
   const togglePossession = async (carteRareteId: number, currentStatus: boolean) => {
@@ -305,13 +320,13 @@ export default function SerieClient({ initialSerie, initialStats }: SerieClientP
         </header>
 
         {/* Filtres */}
-        <section className="sticky top-4 z-10">
-          <div className="bg-white/10 backdrop-blur border border-white/20 rounded-xl p-4 shadow-lg shadow-black/20">
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
-              <h2 className="text-white font-semibold text-lg flex items-center gap-2">
+        <section className={`sticky z-10 transition-all duration-300 ${isFilterCompact ? 'top-2' : 'top-4'}`}>
+          <div className={`bg-white/10 backdrop-blur border border-white/20 rounded-xl shadow-lg shadow-black/20 transition-all duration-300 ${isFilterCompact ? 'p-3' : 'p-4'}`}>
+            <div className={`flex flex-col md:flex-row md:items-center md:justify-between transition-all duration-200 ${isFilterCompact ? 'gap-2 mb-2' : 'gap-4 mb-4'}`}>
+              <h2 className={`text-white font-semibold flex items-center gap-2 transition-all duration-200 ${isFilterCompact ? 'text-base' : 'text-lg'}`}>
                 🎛️ Filtres
               </h2>
-              <div className="flex flex-wrap items-center gap-3 text-sm text-blue-200">
+              <div className={`flex flex-wrap items-center text-blue-200 transition-all duration-200 ${isFilterCompact ? 'gap-2 text-xs' : 'gap-3 text-sm'}`}>
                 <span>
                   {filteredCards.length} carte{filteredCards.length > 1 ? 's' : ''} affichée{filteredCards.length > 1 ? 's' : ''}
                 </span>
@@ -336,9 +351,9 @@ export default function SerieClient({ initialSerie, initialStats }: SerieClientP
               </div>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-[repeat(12,minmax(0,1fr))]">
+            <div className={`grid md:grid-cols-[repeat(12,minmax(0,1fr))] ${isFilterCompact ? 'gap-3' : 'gap-4'}`}>
               <div className="md:col-span-4">
-                <h3 className="text-sm text-blue-200 mb-2 uppercase tracking-wide">Artwork</h3>
+                <h3 className={`text-blue-200 uppercase tracking-wide transition-all duration-200 ${isFilterCompact ? 'text-xs mb-1' : 'text-sm mb-2'}`}>Artwork</h3>
                 <div className="flex flex-wrap gap-2">
                   {availableArtworks.map((artwork) => {
                     const isSelected = selectedArtworks.includes(artwork);
@@ -352,7 +367,7 @@ export default function SerieClient({ initialSerie, initialStats }: SerieClientP
                       <button
                         key={artwork}
                         onClick={() => toggleArtwork(artwork)}
-                        className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors border ${
+                        className={`rounded-full text-xs font-semibold transition-colors border ${isFilterCompact ? 'px-2.5 py-1' : 'px-3 py-1.5'} ${
                           isSelected
                             ? 'bg-blue-500/40 border-blue-400 text-white'
                             : 'bg-white/10 border-white/20 text-blue-200 hover:bg-white/20'
@@ -366,15 +381,15 @@ export default function SerieClient({ initialSerie, initialStats }: SerieClientP
               </div>
 
               <div className="md:col-span-5">
-                <h3 className="text-sm text-blue-200 mb-2 uppercase tracking-wide">Raretés</h3>
-                <div className="flex flex-wrap gap-2">
+                <h3 className={`text-blue-200 uppercase tracking-wide transition-all duration-200 ${isFilterCompact ? 'text-xs mb-1' : 'text-sm mb-2'}`}>Raretés</h3>
+                <div className={`flex flex-wrap ${isFilterCompact ? 'gap-1.5' : 'gap-2'}`}>
                   {availableRarities.map((rarity) => {
                     const isSelected = selectedRarities.includes(rarity);
                     return (
                       <button
                         key={rarity}
                         onClick={() => toggleRarity(rarity)}
-                        className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors border ${
+                        className={`rounded-full text-xs font-semibold transition-colors border ${isFilterCompact ? 'px-2.5 py-1' : 'px-3 py-1.5'} ${
                           isSelected
                             ? 'bg-purple-600/50 border-purple-400 text-white'
                             : 'bg-white/10 border-white/20 text-purple-200 hover:bg-white/20'
@@ -388,8 +403,8 @@ export default function SerieClient({ initialSerie, initialStats }: SerieClientP
               </div>
 
               <div className="md:col-span-3">
-                <h3 className="text-sm text-blue-200 mb-2 uppercase tracking-wide">Possession</h3>
-                <div className="grid grid-cols-3 gap-2 text-xs font-semibold">
+                <h3 className={`text-blue-200 uppercase tracking-wide transition-all duration-200 ${isFilterCompact ? 'text-xs mb-1' : 'text-sm mb-2'}`}>Possession</h3>
+                <div className={`grid grid-cols-3 text-xs font-semibold transition-all duration-200 ${isFilterCompact ? 'gap-1.5' : 'gap-2'}`}>
                   {[
                     { value: 'all', label: 'Toutes' },
                     { value: 'owned', label: 'Possédées' },
@@ -398,7 +413,7 @@ export default function SerieClient({ initialSerie, initialStats }: SerieClientP
                     <button
                       key={value}
                       onClick={() => setPossessionFilter(value as 'all' | 'owned' | 'missing')}
-                      className={`px-3 py-2 rounded-lg border transition-colors ${
+                      className={`rounded-lg border transition-colors ${isFilterCompact ? 'px-2.5 py-1.5' : 'px-3 py-2'} ${
                         possessionFilter === value
                           ? 'bg-green-500/40 border-green-400 text-white'
                           : 'bg-white/10 border-white/20 text-green-200 hover:bg-white/20'
@@ -411,16 +426,16 @@ export default function SerieClient({ initialSerie, initialStats }: SerieClientP
               </div>
 
               <div className="md:col-span-12">
-                <h3 className="text-sm text-blue-200 mb-2 uppercase tracking-wide">Recherche rapide</h3>
+                <h3 className={`text-blue-200 uppercase tracking-wide transition-all duration-200 ${isFilterCompact ? 'text-xs mb-1' : 'text-sm mb-2'}`}>Recherche rapide</h3>
                 <div className="relative">
                   <input
                     type="search"
                     value={searchTerm}
                     onChange={(event) => setSearchTerm(event.target.value)}
                     placeholder="Nom de carte, numéro ou rareté…"
-                    className="w-full bg-white/10 border border-white/20 rounded-lg py-2.5 pl-10 pr-3 text-white placeholder:text-blue-200/60 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+                    className={`w-full bg-white/10 border border-white/20 rounded-lg text-white placeholder:text-blue-200/60 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 transition-all duration-200 ${isFilterCompact ? 'py-2 pl-9 pr-3 text-sm' : 'py-2.5 pl-10 pr-3 text-base'}`}
                   />
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-200">🔍</span>
+                  <span className={`absolute top-1/2 -translate-y-1/2 text-blue-200 transition-all duration-200 ${isFilterCompact ? 'left-2.5 text-sm' : 'left-3 text-base'}`}>🔍</span>
                 </div>
               </div>
             </div>
