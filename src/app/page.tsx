@@ -17,7 +17,11 @@ type SeriesWithStats = {
   completionRate: number;
 };
 
-export default async function Home() {
+interface HomeProps {
+  searchParams?: Promise<Record<string, string | string[] | undefined>> | Record<string, string | string[] | undefined>;
+}
+
+export default async function Home({ searchParams }: HomeProps) {
   let series: SeriesWithStats[] = [];
   let hasDbError = false;
 
@@ -80,6 +84,23 @@ export default async function Home() {
     hasDbError = true;
   }
 
+  const resolvedSearchParams =
+    searchParams instanceof Promise ? await searchParams : (searchParams ?? {});
+
+  const rawQuery = resolvedSearchParams?.q;
+  const queryValue = Array.isArray(rawQuery) ? rawQuery[0] : rawQuery;
+  const searchQuery = queryValue?.trim() ?? '';
+  const normalizedQuery = searchQuery.toLowerCase();
+  const filteredSeries = searchQuery.length > 0
+    ? series.filter((serie) =>
+        serie.nomSerie.toLowerCase().includes(normalizedQuery) ||
+        serie.codeSerie.toLowerCase().includes(normalizedQuery)
+      )
+    : series;
+
+  const totalCards = series.reduce((total, serie) => total + serie._count.cartes, 0);
+  const filteredCards = filteredSeries.reduce((total, serie) => total + serie._count.cartes, 0);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-900 via-purple-900 to-indigo-900">
       <div className="container mx-auto px-4 py-8">
@@ -113,8 +134,38 @@ export default async function Home() {
             </div>
           ) : (
             <p className="text-xl text-blue-200">
-              {series.length} séries • {series.reduce((total, serie) => total + serie._count.cartes, 0)} cartes
+              {searchQuery
+                ? `${filteredSeries.length}/${series.length} séries • ${filteredCards}/${totalCards} cartes`
+                : `${series.length} séries • ${totalCards} cartes`}
             </p>
+          )}
+
+          {!hasDbError && (
+            <form
+              method="get"
+              className="mt-6 mx-auto w-full max-w-xl"
+            >
+              <div className="relative group">
+                <input
+                  type="search"
+                  name="q"
+                  defaultValue={searchQuery}
+                  placeholder="Rechercher une série (nom ou code)..."
+                  className="w-full rounded-full bg-white/10 border border-white/20 py-3 pl-12 pr-4 text-white placeholder:text-blue-200/70 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/40 transition"
+                />
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-200">
+                  🔍
+                </span>
+                {searchQuery && (
+                  <a
+                    href="/"
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-blue-200 hover:text-white underline"
+                  >
+                    Effacer
+                  </a>
+                )}
+              </div>
+            </form>
           )}
         </header>
 
@@ -133,17 +184,24 @@ export default async function Home() {
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {series.map((serie) => {
-              const artworkStats = serie.artworkStats;
-              const hasSpecialArtworks = artworkStats['Alternative'] || artworkStats['New'];
-              const hasProgressData = serie.totalVersions > 0;
-              const completionPercent = hasProgressData ? Math.round(serie.completionRate) : 0;
+          <>
+            {filteredSeries.length === 0 ? (
+              <div className="text-center text-blue-100 bg-white/10 border border-white/10 rounded-2xl py-12">
+                <p className="text-lg font-semibold">Aucune série trouvée</p>
+                <p className="text-sm text-blue-200 mt-2">
+                  Vérifiez l’orthographe ou utilisez un autre mot-clé.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredSeries.map((serie) => {
+                  const hasProgressData = serie.totalVersions > 0;
+                  const completionPercent = hasProgressData ? Math.round(serie.completionRate) : 0;
 
-              return (
-                <Link key={serie.id} href={`/series/${serie.id}`}>
-                  <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-6 hover:bg-white/20 transition-all duration-300 cursor-pointer group">
-                    <div className="flex justify-between items-start mb-4">
+                  return (
+                    <Link key={serie.id} href={`/series/${serie.id}`}>
+                  <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-6 hover:bg-white/20 transition-all duration-300 cursor-pointer group h-full flex flex-col">
+                    <div className="flex justify-between items-start">
                       <h2 className="text-xl font-semibold text-white group-hover:text-blue-200 transition-colors">
                         {serie.nomSerie}
                       </h2>
@@ -151,52 +209,30 @@ export default async function Home() {
                         {serie.codeSerie}
                       </span>
                     </div>
-                    
-                    <div className="space-y-2 text-gray-300">
+
+                    <div className="mt-6 space-y-3 text-gray-300 flex-1">
                       <p className="flex justify-between">
-                        <span>Cartes:</span>
+                        <span>Cartes suivies</span>
                         <span className="font-semibold text-white">{serie._count.cartes}</span>
                       </p>
                       <p className="flex justify-between">
-                        <span>Total prévu:</span>
+                        <span>Total prévu</span>
                         <span className="font-semibold text-white">{serie.nbCartesTotal || 'N/A'}</span>
                       </p>
-                      
-                      {/* Affichage des artworks spéciaux */}
-                      {hasSpecialArtworks && (
-                        <div className="mt-3 space-y-1">
-                          {artworkStats['Alternative'] && (
-                            <div className="flex items-center gap-2 text-xs">
-                              <span className="bg-orange-600/30 text-orange-300 px-2 py-1 rounded border border-orange-500/50">
-                                🎨 {artworkStats['Alternative']} Alternatif{artworkStats['Alternative'] > 1 ? 's' : ''}
-                              </span>
-                            </div>
-                          )}
-                          {artworkStats['New'] && (
-                            <div className="flex items-center gap-2 text-xs">
-                              <span className="bg-cyan-600/30 text-cyan-300 px-2 py-1 rounded border border-cyan-500/50">
-                                ✨ {artworkStats['New']} Nouveau{artworkStats['New'] > 1 ? 'x' : ''}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      )}
 
-                      <div className="pt-3">
+                      <div className="pt-2">
                         <div className="flex items-center justify-between text-xs uppercase tracking-wide text-blue-200">
                           <span>Complétion</span>
-                          {hasProgressData
-                            ? (
-                              <span className="text-white font-semibold">
-                                {serie.ownedVersions}/{serie.totalVersions}
-                                <span className="ml-2 text-xs text-blue-300 font-medium">
-                                  ({completionPercent}%)
-                                </span>
+                          {hasProgressData ? (
+                            <span className="text-white font-semibold">
+                              {serie.ownedVersions}/{serie.totalVersions}
+                              <span className="ml-2 text-xs text-blue-300 font-medium">
+                                ({completionPercent}%)
                               </span>
-                            )
-                            : (
-                              <span className="text-blue-300">En attente</span>
-                            )}
+                            </span>
+                          ) : (
+                            <span className="text-blue-300">En attente</span>
+                          )}
                         </div>
                         <div className="mt-2 h-2 rounded-full bg-white/10 overflow-hidden">
                           <div
@@ -209,24 +245,20 @@ export default async function Home() {
                           />
                         </div>
                       </div>
-                      
-                      {serie.urlSource && (
-                        <p className="text-xs text-blue-300 truncate mt-3">
-                          📖 Source disponible
-                        </p>
-                      )}
                     </div>
-                    
-                    <div className="mt-4 pt-4 border-t border-white/10">
+
+                    <div className="mt-6 pt-4 border-t border-white/10">
                       <p className="text-xs text-gray-400">
                         Ajoutée le {new Date(serie.dateAjout).toLocaleDateString('fr-FR')}
                       </p>
                     </div>
                   </div>
-                </Link>
-              );
-            })}
-          </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </>
         )}
 
         {/* Footer */}
