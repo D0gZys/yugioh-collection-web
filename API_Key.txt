@@ -1,0 +1,12 @@
+Prisma ORM
+Use this connection string as your DATABASE_URL when you initialize your Prisma Client. The API key is already embedded in the connection string.
+
+prisma+postgres://accelerate.prisma-data.net/?api_key=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqd3RfaWQiOjEsInNlY3VyZV9rZXkiOiJza19PZXlmYWJDVC1WMVFYbENZQWUzdlIiLCJhcGlfa2V5IjoiMDFLOFZOM0hZVk1EVkZaV1Y0UE5HM1JLREQiLCJ0ZW5hbnRfaWQiOiIyZDI4MWEwOWU1ZjUxNDAyZTFhNThmOWYxMTc1NjI5ZDdhNmVkNzAyZjM4YWViYjY4YTZjMzA0NWFjMDEzODEwIiwiaW50ZXJuYWxfc2VjcmV0IjoiM2IyNjBjNTEtNjI3Yi00YzliLTg3ZDEtMzczNTAzNWUwMTVmIn0.DFrhcAwFt6wX5IG1oDL88ap8bbyxgM71_TXvwt4Bkbg
+
+Any Client
+Use this connection string to connect to your database with any Postgres-compatible tool or library:
+
+postgres://2d281a09e5f51402e1a58f9f1175629d7a6ed702f38aebb68a6c3045ac013810:sk_OeyfabCT-V1QXlCYAe3vR@db.prisma.io:5432/postgres?sslmode=require
+
+
+
