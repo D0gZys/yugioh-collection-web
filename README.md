@@ -24,7 +24,8 @@ Application Next.js 15 (App Router) pour piloter une collection de cartes Yu-Gi-
   - Import automatique via URL Yugipedia ou collage d’un `<tbody>` HTML.
   - Détection des artworks, raretés et doublons, édition inline, filtres, historique local.
   - Persistance locale de l’état (HTML, URL, cartes) pour éviter toute perte avant sauvegarde.
-  - Isolement des doublons et mise en évidence des lignes invalides via scroll automatique.
+  - Isolement des doublons et mise en Ǹvidence des lignes invalides via scroll automatique.
+  - Detection automatique de la langue depuis le code des cartes (FR, DE, EN, etc.) avec override manuel avant sauvegarde.
 
 - **Page statistiques**
   - Agrégations Prisma (séries, cartes, raretés, artworks, complétion globale).
@@ -134,3 +135,11 @@ Assurez-vous que `DATABASE_URL` pointe vers une instance PostgreSQL accessible p
 ---
 
 Bon build et bonne complétion de collection ! 😊
+
+#### Gestion des langues & migrations Prisma
+
+- Le schema introduit une table langues et une FK Series.langueId. Utilisez npm run db:migrate pour appliquer la migration existante, ou npm run db:migrate -- --name add-language-support si vous devez generer une nouvelle migration dans un schema vierge.
+- En cas de drift (migration manquante, index deja presents), Prisma demandera npx prisma migrate reset. **Attention :** cette commande vide la base ; exportez ce qui est important avant de confirmer.
+- Pour regenerer le client Prisma apres modification du schema, lancez npm run db:generate.
+- Les donnees de demonstration peuvent etre reinserrees via node scripts/seed-test-data.ts.
+

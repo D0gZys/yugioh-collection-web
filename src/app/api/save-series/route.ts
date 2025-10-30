@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
-import { detectArtworkType, normalizeFrenchName } from '@/lib/card';
 import { z } from 'zod';
+
+import { detectArtworkType, normalizeFrenchName } from '@/lib/card';
+import {
+  DEFAULT_LANGUAGE_CODE,
+  detectDominantLanguageFromCodes,
+  getLanguageLabel,
+  resolveLanguageCode,
+} from '@/lib/language';
+import { prisma } from '@/lib/prisma';
 
 const cardDataSchema = z.object({
   code: z.string().trim().min(1),
@@ -15,18 +22,31 @@ const cardDataSchema = z.object({
 const saveSeriesSchema = z.object({
   seriesCode: z.string().trim().min(1).max(10),
   seriesName: z.string().trim().min(1),
-  sourceUrl: z.preprocess(
-    (value) => {
+  sourceUrl: z
+    .preprocess((value) => {
       if (typeof value !== 'string') {
         return null;
       }
       const normalized = value.trim();
       return normalized.length === 0 ? null : normalized;
-    },
-    z.string().url().nullable()
-  ),
+    }, z.string().url().nullable()),
+  languageCode: z
+    .string()
+    .trim()
+    .transform((value) => value.toUpperCase())
+    .optional(),
   cards: z.array(cardDataSchema).min(1, 'Au moins une carte est requise'),
 });
+
+type ParsedPayload = z.infer<typeof saveSeriesSchema>;
+
+type CardAggregation = {
+  code: string;
+  nameEnglish: string;
+  nameFrench: string;
+  artwork: 'None' | 'New' | 'Alternative';
+  rarities: Set<string>;
+};
 
 export async function POST(request: NextRequest) {
   try {
@@ -36,236 +56,268 @@ export async function POST(request: NextRequest) {
     if (!parsed.success) {
       return NextResponse.json(
         {
-          error: 'Données de requête invalides',
+          error: 'Donnees de requete invalides',
           details: parsed.error.flatten(),
         },
-        { status: 422 }
+        { status: 422 },
       );
     }
 
-    const data = parsed.data;
+    const data: ParsedPayload = parsed.data;
 
-    console.log('📝 Réception des données:', {
+    console.log('<< API save-series >> reception:', {
       seriesCode: data.seriesCode,
       seriesName: data.seriesName,
       cardsCount: data.cards.length,
-      sourceUrl: data.sourceUrl
+      sourceUrl: data.sourceUrl,
     });
 
-    // Analyser les doublons dans les données reçues
-    const cardCodes = data.cards.map(card => card.code);
-    const uniqueCardCodes = [...new Set(cardCodes)];
-    const duplicatesCount = cardCodes.length - uniqueCardCodes.length;
-    
+    const cardCodes = data.cards.map((card) => card.code);
+    const uniqueCardCodes = new Set(cardCodes);
+    const duplicatesCount = cardCodes.length - uniqueCardCodes.size;
+
     if (duplicatesCount > 0) {
-      console.log(`⚠️ Doublons détectés: ${duplicatesCount} cartes dupliquées sur ${cardCodes.length} total`);
-      
-      // Identifier les codes en double
-      const duplicatedCodes = cardCodes.filter((code, index) => cardCodes.indexOf(code) !== index);
+      const duplicatedCodes = cardCodes.filter(
+        (code, index) => cardCodes.indexOf(code) !== index,
+      );
       const uniqueDuplicates = [...new Set(duplicatedCodes)];
-      console.log('🔍 Codes de cartes dupliqués:', uniqueDuplicates.slice(0, 5), 
-        uniqueDuplicates.length > 5 ? `... et ${uniqueDuplicates.length - 5} autres` : '');
+      console.log('  -> Doublons detectes:', {
+        duplicatesCount,
+        sample: uniqueDuplicates.slice(0, 5),
+      });
     }
 
-    // Vérifier si la série existe déjà
-    const existingSeries = await prisma.series.findUnique({
-      where: { codeSerie: data.seriesCode }
+    const languageDetection = detectDominantLanguageFromCodes(cardCodes);
+    const requestedLanguage = resolveLanguageCode(data.languageCode);
+    const languageCode =
+      requestedLanguage ??
+      languageDetection.code ??
+      DEFAULT_LANGUAGE_CODE;
+    const languageLabel = getLanguageLabel(languageCode);
+
+    console.log('  -> Langue retenue:', {
+      requested: data.languageCode ?? 'none',
+      detected: languageDetection.code ?? 'none',
+      chosen: languageCode,
+      confidence: languageDetection.confidence,
+      matches: languageDetection.matches,
+      sampleSize: languageDetection.total,
+    });
+
+    const existingSeries = await prisma.series.findFirst({
+      where: {
+        codeSerie: data.seriesCode,
+        langue: {
+          codeLangue: languageCode,
+        },
+      },
     });
 
     if (existingSeries) {
       return NextResponse.json(
-        { error: 'Cette série existe déjà dans la base de données' },
-        { status: 400 }
+        {
+          error: `Cette serie existe deja pour la langue ${languageLabel}`,
+        },
+        { status: 400 },
       );
     }
 
-    // Créer la série avec toutes ses cartes en une transaction
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Créer la série
+      const languageRecord = await tx.langue.upsert({
+        where: { codeLangue: languageCode },
+        create: {
+          codeLangue: languageCode,
+          nomLangue: languageLabel,
+        },
+        update: {
+          nomLangue: languageLabel,
+        },
+      });
+
       const newSeries = await tx.series.create({
         data: {
           codeSerie: data.seriesCode,
           nomSerie: data.seriesName,
-          urlSource: data.sourceUrl,
+          urlSource: data.sourceUrl ?? null,
           nbCartesTotal: data.cards.length,
-          dateAjout: new Date()
-        }
+          dateAjout: new Date(),
+          langueId: languageRecord.id,
+        },
       });
 
-      console.log('✅ Série créée:', newSeries);
+      const cardMap = new Map<string, CardAggregation>();
 
-      // 2. Créer les cartes uniques (basé sur code + artwork)
-      // Regrouper les cartes par code+artwork pour gérer les multiples versions
-      const cardMap = new Map();
-      
-      data.cards.forEach(card => {
-        // Détecter le type d'artwork automatiquement ou utiliser celui fourni
+      data.cards.forEach((card) => {
         const artworkDetection = detectArtworkType({
           code: card.code,
           englishName: card.nameEnglish,
         });
-        const artworkType = card.artwork || artworkDetection.artwork;
-        const cardKey = `${card.code}_${artworkType}`;
-        const normalizedFrenchName = card.nameFrench ? normalizeFrenchName(card.nameFrench) : '';
-        
-        if (!cardMap.has(cardKey)) {
-          cardMap.set(cardKey, {
+        const artworkType = card.artwork ?? artworkDetection.artwork;
+        const key = `${card.code.trim()}__${artworkType}`;
+        const normalizedFrenchName = card.nameFrench
+          ? normalizeFrenchName(card.nameFrench)
+          : '';
+
+        if (!cardMap.has(key)) {
+          cardMap.set(key, {
             code: card.code.trim(),
-            nameFrench: normalizedFrenchName,
             nameEnglish: artworkDetection.cleanedEnglishName,
+            nameFrench: normalizedFrenchName,
             artwork: artworkType,
-            rarities: new Set<string>()
+            rarities: new Set<string>(),
           });
         }
-        // Ajouter la rareté à cet ensemble
-        cardMap.get(cardKey).rarities.add(card.rarity);
+
+        cardMap.get(key)?.rarities.add(card.rarity);
       });
 
-      console.log(`📊 Cartes uniques détectées: ${cardMap.size} sur ${data.cards.length} entrées`);
-      
-      // Analyser la répartition des artworks
-      const artworkStats: Record<string, number> = {};
-      cardMap.forEach(card => {
-        artworkStats[card.artwork] = (artworkStats[card.artwork] || 0) + 1;
+      console.log('  -> Cartes uniques detectees:', {
+        uniqueEntries: cardMap.size,
+        totalRows: data.cards.length,
       });
-      console.log('🎨 Répartition des artworks:', artworkStats);
 
-      // Créer les cartes uniques avec artwork
-      const cardsToCreate = Array.from(cardMap.values()).map(card => ({
+      const cardsToCreate = Array.from(cardMap.values()).map((card) => ({
         numeroCarte: card.code,
-        nomCarte: card.nameFrench && card.nameFrench.length > 0 ? card.nameFrench : card.nameEnglish,
+        nomCarte:
+          card.nameFrench.length > 0
+            ? card.nameFrench
+            : card.nameEnglish,
         serieId: newSeries.id,
-        artwork: card.artwork
+        artwork: card.artwork,
       }));
 
       const createdCards = await tx.carte.createMany({
         data: cardsToCreate,
-        skipDuplicates: true // Ignorer les doublons si ils existent déjà
+        skipDuplicates: true,
       });
 
-      console.log('✅ Cartes créées:', createdCards.count);
-
-      // 3. Récupérer les cartes créées pour créer les raretés
       const cards = await tx.carte.findMany({
-        where: { serieId: newSeries.id }
+        where: { serieId: newSeries.id },
       });
 
-      // 4. Traiter les raretés et créer les relations
-      const allRarities = [...new Set(data.cards.map(card => card.rarity))];
-      console.log(`🎨 Raretés détectées: ${allRarities.length} types différents`);
-      
-      // Créer ou récupérer toutes les raretés d'abord
-      const rarityMap = new Map();
+      const allRarities = Array.from(
+        new Set(data.cards.map((card) => card.rarity)),
+      );
+
+      const rarityMap = new Map<string, { id: number }>();
       for (const rarityName of allRarities) {
         let rarity = await tx.rarete.findFirst({
-          where: { nomRarete: rarityName }
+          where: { nomRarete: rarityName },
         });
 
         if (!rarity) {
           rarity = await tx.rarete.create({
             data: {
               nomRarete: rarityName,
-              ordreTri: 0
-            }
+              ordreTri: 0,
+            },
           });
-          console.log(`➕ Nouvelle rareté créée: ${rarityName}`);
+          console.log('    -> Nouvelle rarete creee:', rarityName);
         }
-        
+
         rarityMap.set(rarityName, rarity);
       }
 
-      // 5. Créer les relations carte-rareté en utilisant notre cardMap
       let relationsCreated = 0;
-      
-      for (const [, cardInfo] of cardMap) {
-        // Rechercher la carte correspondante par code ET artwork
-        const correspondingCard = cards.find(card => 
-          card.numeroCarte === cardInfo.code && 
-          card.artwork === cardInfo.artwork
-        );
-        
-        if (correspondingCard) {
-          // Pour chaque rareté de cette carte
-          for (const rarityName of cardInfo.rarities) {
-            const rarity = rarityMap.get(rarityName);
-            
-            if (rarity) {
-              // Vérifier si la relation existe déjà
-              const existingCarteRarete = await tx.carteRarete.findUnique({
-                where: {
-                  carteId_rareteId: {
-                    carteId: correspondingCard.id,
-                    rareteId: rarity.id
-                  }
-                }
-              });
 
-              // Créer la relation seulement si elle n'existe pas
-              if (!existingCarteRarete) {
-                await tx.carteRarete.create({
-                  data: {
-                    carteId: correspondingCard.id,
-                    rareteId: rarity.id,
-                    possedee: false,
-                    condition: 'NM'
-                  }
-                });
-                relationsCreated++;
-              }
-            }
+      for (const cardInfo of cardMap.values()) {
+        const targetCard = cards.find(
+          (card) =>
+            card.numeroCarte === cardInfo.code &&
+            card.artwork === cardInfo.artwork,
+        );
+
+        if (!targetCard) {
+          console.log('    -> Carte introuvable lors de la liaison:', {
+            code: cardInfo.code,
+            artwork: cardInfo.artwork,
+          });
+          continue;
+        }
+
+        for (const rarityName of cardInfo.rarities) {
+          const rarity = rarityMap.get(rarityName);
+          if (!rarity) {
+            continue;
           }
-        } else {
-          console.log(`⚠️ Carte non trouvée: ${cardInfo.code} (${cardInfo.artwork})`);
+
+          const existingRelation = await tx.carteRarete.findUnique({
+            where: {
+              carteId_rareteId: {
+                carteId: targetCard.id,
+                rareteId: rarity.id,
+              },
+            },
+          });
+
+          if (!existingRelation) {
+            await tx.carteRarete.create({
+              data: {
+                carteId: targetCard.id,
+                rareteId: rarity.id,
+                possedee: false,
+                condition: 'NM',
+              },
+            });
+            relationsCreated += 1;
+          }
         }
       }
-      
-      console.log(`🔗 Relations carte-rareté créées: ${relationsCreated}`);
+
+      console.log('  -> Cartes inserees:', createdCards.count);
+      console.log('  -> Relations carte-rarete creees:', relationsCreated);
 
       return {
         series: newSeries,
         cardsCount: createdCards.count,
         raritiesCount: allRarities.length,
-        relationsCreated: relationsCreated
+        relationsCreated,
+        language: {
+          id: languageRecord.id,
+          code: languageCode,
+          label: languageLabel,
+        },
       };
     });
 
-    console.log('🎉 Transaction complétée avec succès');
-
     return NextResponse.json({
       success: true,
-      message: `Série "${data.seriesName}" ajoutée avec succès`,
+      message: `Serie "${data.seriesName}" ajoutee avec succes`,
       data: {
         seriesId: result.series.id,
         seriesCode: result.series.codeSerie,
         cardsAdded: result.cardsCount,
         raritiesProcessed: result.raritiesCount,
         relationsCreated: result.relationsCreated,
-        originalDataCount: data.cards.length
-      }
-    });
-
-  } catch (error) {
-    console.error('❌ Erreur lors de la sauvegarde:', error);
-    
-    // Gestion spécifique des erreurs Prisma
-    if (error && typeof error === 'object' && 'code' in error) {
-      if (error.code === 'P2002') {
-        return NextResponse.json(
-          { 
-            error: 'Conflit de données',
-            details: 'Une ou plusieurs cartes/raretés existent déjà dans la base de données'
-          },
-          { status: 409 }
-        );
-      }
-    }
-    
-    return NextResponse.json(
-      { 
-        error: 'Erreur lors de la sauvegarde de la série',
-        details: error instanceof Error ? error.message : 'Erreur inconnue'
+        languageCode,
       },
-      { status: 500 }
+    });
+  } catch (error) {
+    console.error('Erreur lors de la sauvegarde de la serie:', error);
+
+    if (
+      error &&
+      typeof error === 'object' &&
+      'code' in error &&
+      (error as { code?: string }).code === 'P2002'
+    ) {
+      return NextResponse.json(
+        {
+          error: 'Conflit de donnees',
+          details:
+            'Une ou plusieurs cartes ou raretes existent deja dans la base de donnees',
+        },
+        { status: 409 },
+      );
+    }
+
+    return NextResponse.json(
+      {
+        error: 'Erreur lors de la sauvegarde de la serie',
+        details:
+          error instanceof Error ? error.message : 'Erreur inconnue',
+      },
+      { status: 500 },
     );
   }
 }

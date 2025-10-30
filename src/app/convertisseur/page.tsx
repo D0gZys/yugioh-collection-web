@@ -1,13 +1,20 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import {
   detectArtworkType,
   normalizeCardName,
   normalizeFrenchName,
   type ArtworkType,
 } from '@/lib/card';
+import {
+  DEFAULT_LANGUAGE_CODE,
+  LANGUAGE_OPTIONS,
+  detectDominantLanguageFromCodes,
+  resolveLanguageCode,
+  type LanguageCode,
+} from '@/lib/language';
 
 interface Card {
   code: string;
@@ -59,8 +66,18 @@ const parseCardsFromHTML = (html: string): Card[] => {
       return;
     }
 
+    if (!languageCode) {
+      showMessage({ type: 'error', text: 'Impossible de determiner la langue de la serie' });
+      return;
+    }
+
     const code = cells[0]?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
     if (!code) {
+      return;
+    }
+
+    if (!languageCode) {
+      showMessage({ type: 'error', text: 'Impossible de determiner la langue de la serie' });
       return;
     }
 
@@ -79,6 +96,11 @@ const parseCardsFromHTML = (html: string): Card[] => {
       return;
     }
 
+    if (!languageCode) {
+      showMessage({ type: 'error', text: 'Impossible de determiner la langue de la serie' });
+      return;
+    }
+
     const type = cells[4]?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 
     rarities.forEach((rarity) => {
@@ -94,6 +116,21 @@ const parseCardsFromHTML = (html: string): Card[] => {
   });
 
   return cards;
+};
+
+const deriveSeriesCode = (cardCode: string): string => {
+  if (!cardCode) {
+    return '';
+  }
+
+  const trimmed = cardCode.trim().toUpperCase();
+  const separatorIndex = trimmed.indexOf('-');
+
+  if (separatorIndex > 0) {
+    return trimmed.slice(0, separatorIndex).slice(0, 10);
+  }
+
+  return trimmed.slice(0, 10);
 };
 
 const extractSeriesNameFromUrl = (inputUrl: string): string => {
@@ -149,6 +186,19 @@ export default function ConvertisseurPage() {
   const [showOnlyDuplicates, setShowOnlyDuplicates] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null);
   const highlightTimeoutRef = useRef<number | null>(null);
+  const [languageCode, setLanguageCode] = useState<LanguageCode>(DEFAULT_LANGUAGE_CODE);
+  const [languageDetection, setLanguageDetection] = useState<{
+    code: LanguageCode | null;
+    confidence: number;
+    matches: number;
+    total: number;
+  }>({
+    code: DEFAULT_LANGUAGE_CODE,
+    confidence: 0,
+    matches: 0,
+    total: 0,
+  });
+  const [languageManuallySet, setLanguageManuallySet] = useState(false);
 
   useEffect(() => {
     const stored = (typeof window !== 'undefined' && window.localStorage.getItem(STORAGE_KEY)) || null;
@@ -262,9 +312,47 @@ export default function ConvertisseurPage() {
     };
   }, [extractedCards]);
 
+  const seriesCode = useMemo(() => {
+    if (extractedCards.length === 0) {
+      return '';
+    }
+    return deriveSeriesCode(extractedCards[0].code);
+  }, [extractedCards]);
+
+
+
+  const languageConfidencePercent = useMemo(
+    () => Math.round(languageDetection.confidence * 100),
+    [languageDetection.confidence],
+  );
+
   const duplicateCodeSet = useMemo(() => {
     return new Set(summaryStats.duplicateEntries.map((entry) => entry.code));
   }, [summaryStats.duplicateEntries]);
+
+  useEffect(() => {
+    if (extractedCards.length === 0) {
+      setLanguageDetection({
+        code: DEFAULT_LANGUAGE_CODE,
+        confidence: 0,
+        matches: 0,
+        total: 0,
+      });
+      if (!languageManuallySet) {
+        setLanguageCode(DEFAULT_LANGUAGE_CODE);
+      }
+      return;
+    }
+
+    const detection = detectDominantLanguageFromCodes(
+      extractedCards.map((card) => card.code),
+    );
+    setLanguageDetection(detection);
+
+    if (!languageManuallySet) {
+      setLanguageCode(detection.code ?? DEFAULT_LANGUAGE_CODE);
+    }
+  }, [extractedCards, languageManuallySet]);
 
   useEffect(() => {
     if (summaryStats.duplicates === 0 && showOnlyDuplicates) {
@@ -285,6 +373,11 @@ export default function ConvertisseurPage() {
       return;
     }
 
+    if (!languageCode) {
+      showMessage({ type: 'error', text: 'Impossible de determiner la langue de la serie' });
+      return;
+    }
+
     const desktopRow = document.getElementById(`card-row-${index}`);
     const mobileRow = document.getElementById(`card-row-mobile-${index}`);
     const target = desktopRow ?? mobileRow;
@@ -296,6 +389,11 @@ export default function ConvertisseurPage() {
 
   const triggerHighlight = (index: number) => {
     if (index < 0) {
+      return;
+    }
+
+    if (!languageCode) {
+      showMessage({ type: 'error', text: 'Impossible de determiner la langue de la serie' });
       return;
     }
 
@@ -349,6 +447,7 @@ export default function ConvertisseurPage() {
       }
 
       setExtractedCards(data.cards);
+      setLanguageManuallySet(false);
       setUrl(data.url);
       setText('');
       setRecentUrls((prev) => {
@@ -378,9 +477,18 @@ export default function ConvertisseurPage() {
       return;
     }
 
-    const seriesCode = extractedCards[0]?.code.substring(0, 4);
+    if (!languageCode) {
+      showMessage({ type: 'error', text: 'Impossible de determiner la langue de la serie' });
+      return;
+    }
+
     if (!seriesCode) {
       showMessage({ type: 'error', text: 'Impossible de déterminer le code de série' });
+      return;
+    }
+
+    if (!languageCode) {
+      showMessage({ type: 'error', text: 'Impossible de determiner la langue de la serie' });
       return;
     }
 
@@ -391,6 +499,11 @@ export default function ConvertisseurPage() {
         type: 'error',
         text: `Carte incomplète détectée ligne ${invalidIndex + 1}. Vérifiez code, nom anglais et rareté.`,
       });
+      return;
+    }
+
+    if (!languageCode) {
+      showMessage({ type: 'error', text: 'Impossible de determiner la langue de la serie' });
       return;
     }
 
@@ -409,6 +522,7 @@ export default function ConvertisseurPage() {
           seriesCode,
           seriesName,
           sourceUrl: url.trim() || undefined,
+          languageCode,
           cards: extractedCards,
         }),
       });
@@ -441,9 +555,16 @@ export default function ConvertisseurPage() {
         text: 'Aucune carte détectée dans le HTML fourni.',
       });
       setExtractedCards([]);
+      setLanguageManuallySet(false);
       return;
     }
 
+    if (!languageCode) {
+      showMessage({ type: 'error', text: 'Impossible de determiner la langue de la serie' });
+      return;
+    }
+
+    setLanguageManuallySet(false);
     setExtractedCards(cards);
     showMessage({
       type: 'success',
@@ -456,6 +577,14 @@ export default function ConvertisseurPage() {
     setExtractedCards([]);
     setSaveMessage(null);
     resetFilters();
+    setLanguageManuallySet(false);
+    setLanguageCode(DEFAULT_LANGUAGE_CODE);
+    setLanguageDetection({
+      code: DEFAULT_LANGUAGE_CODE,
+      confidence: 0,
+      matches: 0,
+      total: 0,
+    });
   };
 
   const updateCard = (index: number, updates: Partial<Card>) => {
@@ -466,6 +595,17 @@ export default function ConvertisseurPage() {
 
   const removeCard = (index: number) => {
     setExtractedCards((prev) => prev.filter((_, cardIndex) => cardIndex !== index));
+  };
+
+  const handleLanguageChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    const resolved = resolveLanguageCode(event.target.value) ?? DEFAULT_LANGUAGE_CODE;
+    setLanguageCode(resolved);
+    setLanguageManuallySet(true);
+  };
+
+  const resetLanguageToDetection = () => {
+    setLanguageManuallySet(false);
+    setLanguageCode(languageDetection.code ?? DEFAULT_LANGUAGE_CODE);
   };
 
   const toggleArtworkFilter = (artwork: ArtworkType) => {
@@ -612,7 +752,8 @@ export default function ConvertisseurPage() {
                   const testHtml =
                     '<tbody><tr><td><a href="/wiki/BLMM-FR001" class="mw-redirect" title="BLMM-FR001">BLMM-FR001</a></td><td>"<a href="/wiki/Blue-Eyes_White_Dragon" title="Blue-Eyes White Dragon">Blue-Eyes White Dragon</a>"</td><td><span lang="fr">"Dragon Blanc aux Yeux Bleus"</span></td><td><a href="/wiki/Secret_Rare" title="Secret Rare">Secret Rare</a><br><a href="/wiki/Starlight_Rare" title="Starlight Rare">Starlight Rare</a></td><td><a href="/wiki/Normal_Monster" title="Normal Monster">Normal Monster</a></td><td>New artwork</td></tr></tbody>';
                   const cards = parseCardsFromHTML(testHtml);
-                  setExtractedCards(cards);
+                  setLanguageManuallySet(false);
+    setExtractedCards(cards);
                   showMessage({
                     type: 'success',
                     text: `${cards.length} entrée(s) détectée(s) avec l'exemple`,
@@ -650,7 +791,7 @@ export default function ConvertisseurPage() {
                   <div className="space-y-2 text-sm">
                     <div className="bg-purple-600/30 border border-purple-500 rounded-lg px-3 py-1 text-purple-200">
                       <span className="font-medium text-white">Code série:</span>{' '}
-                      {extractedCards[0]?.code.substring(0, 4)}
+                      {seriesCode || 'Inconnu'}
                     </div>
                     {derivedSeriesName && (
                       <div className="bg-blue-600/30 border border-blue-500 rounded-lg px-3 py-1 text-blue-200">
@@ -658,6 +799,39 @@ export default function ConvertisseurPage() {
                         {derivedSeriesName}
                       </div>
                     )}
+                    <div className="bg-green-600/30 border border-green-500 rounded-lg px-3 py-2 text-green-200">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium text-white">Langue:</span>
+                        <select
+                          value={languageCode}
+                          onChange={handleLanguageChange}
+                          className="bg-transparent border border-green-400/60 rounded-md px-2 py-1 text-sm text-white focus:outline-none focus:border-white"
+                        >
+                          {LANGUAGE_OPTIONS.map((option) => (
+                            <option key={option.code} value={option.code}>
+                              {option.code} - {option.label}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="text-xs uppercase tracking-wide text-green-100 bg-green-500/20 border border-green-400/40 px-2 py-1 rounded-full">
+                          {languageManuallySet ? 'Manuel' : 'Detectee'}
+                        </span>
+                        {languageManuallySet && languageDetection.code && languageDetection.code !== languageCode && (
+                          <button
+                            type="button"
+                            onClick={resetLanguageToDetection}
+                            className="text-xs text-white/80 hover:text-white underline"
+                          >
+                            Revenir a la detection
+                          </button>
+                        )}
+                      </div>
+                      <div className="text-xs text-green-100 mt-1">
+                        {languageDetection.matches > 0
+                          ? `Detection: ${languageDetection.code ?? 'N/A'} (${languageConfidencePercent}% - ${languageDetection.matches}/${languageDetection.total} codes identifies)`
+                          : 'Aucune detection automatique sur les codes fournis'}
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -1014,3 +1188,23 @@ export default function ConvertisseurPage() {
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

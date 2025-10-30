@@ -8,6 +8,10 @@ type SeriesWithStats = {
   urlSource: string | null;
   dateAjout: Date;
   nbCartesTotal: number;
+  langue: {
+    codeLangue: string;
+    nomLangue: string;
+  };
   _count: {
     cartes: number;
   };
@@ -29,6 +33,7 @@ export default async function Home({ searchParams }: HomeProps) {
     const [rawSeries, artworkGroups] = await Promise.all([
       prisma.series.findMany({
         include: {
+          langue: true,
           cartes: {
             select: {
               carteRaretes: {
@@ -62,7 +67,7 @@ export default async function Home({ searchParams }: HomeProps) {
     }
 
     series = rawSeries.map((serie) => {
-      const { cartes, ...serieData } = serie;
+      const { cartes, langue, ...serieData } = serie;
       const totalVersions = cartes.reduce((acc, carte) => acc + carte.carteRaretes.length, 0);
       const ownedVersions = cartes.reduce(
         (acc, carte) => acc + carte.carteRaretes.filter((rarete) => rarete.possedee).length,
@@ -72,6 +77,7 @@ export default async function Home({ searchParams }: HomeProps) {
 
       return {
         ...serieData,
+        langue,
         artworkStats: artworkStatsBySerie.get(serie.id) ?? {},
         totalVersions,
         ownedVersions,
@@ -103,3 +109,11 @@ export default async function Home({ searchParams }: HomeProps) {
     />
   );
 }
+
+
+
+
+
+
+
+

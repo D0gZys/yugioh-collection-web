@@ -34,6 +34,10 @@ export interface Serie {
   urlSource: string | null;
   dateAjout: string;
   nbCartesTotal: number;
+  langue: {
+    codeLangue: string;
+    nomLangue: string;
+  };
   cartes: Carte[];
 }
 
@@ -246,9 +250,17 @@ export default function SerieClient({ initialSerie, initialStats }: SerieClientP
         {/* Header de la série */}
         <header className="text-center mb-12">
           <div className="flex items-center justify-center gap-4 mb-4">
-            <span className="bg-blue-500/30 text-blue-200 px-4 py-2 rounded-full text-lg font-medium">
-              {serie.codeSerie}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="bg-blue-500/30 text-blue-200 px-4 py-2 rounded-full text-lg font-medium">
+                {serie.codeSerie}
+              </span>
+              <span
+                className="bg-green-500/20 text-green-100 px-3 py-1 rounded-full text-sm font-semibold"
+                title={serie.langue.nomLangue}
+              >
+                {serie.langue.codeLangue}
+              </span>
+            </div>
             <h1 className="text-4xl font-bold text-white">
               {serie.nomSerie}
             </h1>
@@ -583,3 +595,5 @@ export default function SerieClient({ initialSerie, initialStats }: SerieClientP
     </div>
   );
 }
+
+

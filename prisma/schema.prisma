@@ -17,16 +17,30 @@ datasource db {
 // Modèle pour les séries Yu-Gi-Oh (adapté de ta structure existante)
 model Series {
   id            Int       @id @default(autoincrement())
-  codeSerie     String    @unique @map("code_serie") @db.VarChar(10)
+  codeSerie     String    @map("code_serie") @db.VarChar(10)
   nomSerie      String    @map("nom_serie") @db.VarChar(100)
   urlSource     String?   @map("url_source") @db.Text
   dateAjout     DateTime  @default(now()) @map("date_ajout")
   nbCartesTotal Int       @default(0) @map("nb_cartes_total")
+  langueId      Int       @map("langue_id")
+  langue        Langue    @relation(fields: [langueId], references: [id], onDelete: Restrict)
   
   // Relations
   cartes        Carte[]
   
+  @@unique([codeSerie, langueId])
   @@map("series")
+}
+
+model Langue {
+  id         Int      @id @default(autoincrement())
+  codeLangue String   @unique @map("code_langue") @db.VarChar(5)
+  nomLangue  String   @map("nom_langue") @db.VarChar(50)
+
+  // Relations
+  series     Series[]
+
+  @@map("langues")
 }
 
 // Modèle pour les cartes Yu-Gi-Oh

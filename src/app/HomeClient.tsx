@@ -10,6 +10,10 @@ type SeriesWithStats = {
   urlSource: string | null;
   dateAjout: string;
   nbCartesTotal: number;
+  langue: {
+    codeLangue: string;
+    nomLangue: string;
+  };
   _count: {
     cartes: number;
   };
@@ -57,9 +61,13 @@ export default function HomeClient({
     return series.filter((serie) => {
       const lowerName = serie.nomSerie.toLowerCase();
       const lowerCode = serie.codeSerie.toLowerCase();
+      const lowerLangCode = serie.langue.codeLangue.toLowerCase();
+      const lowerLangName = serie.langue.nomLangue.toLowerCase();
       return (
         lowerName.includes(normalizedQuery) ||
-        lowerCode.includes(normalizedQuery)
+        lowerCode.includes(normalizedQuery) ||
+        lowerLangCode.includes(normalizedQuery) ||
+        lowerLangName.includes(normalizedQuery)
       );
     });
   }, [series, trimmedQuery, normalizedQuery]);
@@ -277,9 +285,17 @@ export default function HomeClient({
                             <h2 className="text-xl font-semibold text-white group-hover:text-blue-200 transition-colors">
                               {serie.nomSerie}
                             </h2>
-                            <span className="bg-blue-500/30 text-blue-200 px-3 py-1 rounded-full text-sm font-medium">
-                              {serie.codeSerie}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className="bg-blue-500/30 text-blue-200 px-3 py-1 rounded-full text-sm font-medium">
+                                {serie.codeSerie}
+                              </span>
+                              <span
+                                className="bg-green-500/20 text-green-200 px-2 py-1 rounded-full text-xs font-semibold"
+                                title={serie.langue.nomLangue}
+                              >
+                                {serie.langue.codeLangue}
+                              </span>
+                            </div>
                           </div>
 
                           <div className="mt-6 space-y-3 text-gray-300 flex-1">
@@ -353,3 +369,6 @@ export default function HomeClient({
     </div>
   );
 }
+
+
+

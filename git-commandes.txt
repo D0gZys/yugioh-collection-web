@@ -133,4 +133,4 @@ git stash                                            # Si tu veux annuler tempor
 ═══════════════════════════════════════════════════════════════════════════════════
                         Créé pour le projet Yu-Gi-Oh Collection Web
                               https://github.com/D0gZys/yugioh-collection-web
-═══════════════════════════════════════════════════════════════════════════════════
+═══════════════════════════════════════════════════════════════════════════════════\r\n\r\n---\r\nPRISMA / BASE DE DONNEES\r\n\r\nprisma migrate dev      # applique la derniere migration\nnpx prisma migrate dev --name <nom>  # cree une nouvelle migration\nnpx prisma migrate reset            # reset complet (vide la base)\nnpm run db:generate                 # regenere le client Prisma\nnode scripts/seed-test-data.ts      # jeu de donnees de demonstration\n

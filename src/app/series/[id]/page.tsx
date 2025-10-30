@@ -18,6 +18,7 @@ export default async function SeriePage({ params }: PageProps) {
   const serie = await prisma.series.findUnique({
     where: { id: serieId },
     include: {
+      langue: true,
       cartes: {
         include: {
           carteRaretes: {
@@ -87,3 +88,5 @@ export default async function SeriePage({ params }: PageProps) {
     />
   );
 }
+
+

@@ -255,6 +255,10 @@ function SeriesProgressList({
     id: number;
     nomSerie: string;
     codeSerie: string;
+    langue: {
+      codeLangue: string;
+      nomLangue: string;
+    };
     owned: number;
     total: number;
     completion: number;
@@ -348,6 +352,12 @@ export default async function StatistiquesPage() {
           id: true,
           nomSerie: true,
           codeSerie: true,
+          langue: {
+            select: {
+              codeLangue: true,
+              nomLangue: true,
+            },
+          },
           cartes: {
             select: {
               carteRaretes: {
@@ -444,6 +454,7 @@ export default async function StatistiquesPage() {
         id: serie.id,
         nomSerie: serie.nomSerie,
         codeSerie: serie.codeSerie,
+        langue: serie.langue,
         owned,
         total,
         completion,
@@ -614,3 +625,7 @@ export default async function StatistiquesPage() {
 
   return null;
 }
+
+
+
+
