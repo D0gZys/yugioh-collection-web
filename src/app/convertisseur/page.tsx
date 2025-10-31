@@ -66,18 +66,8 @@ const parseCardsFromHTML = (html: string): Card[] => {
       return;
     }
 
-    if (!languageCode) {
-      showMessage({ type: 'error', text: 'Impossible de determiner la langue de la serie' });
-      return;
-    }
-
     const code = cells[0]?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
     if (!code) {
-      return;
-    }
-
-    if (!languageCode) {
-      showMessage({ type: 'error', text: 'Impossible de determiner la langue de la serie' });
       return;
     }
 
@@ -93,11 +83,6 @@ const parseCardsFromHTML = (html: string): Card[] => {
       .filter(Boolean);
 
     if (rarities.length === 0) {
-      return;
-    }
-
-    if (!languageCode) {
-      showMessage({ type: 'error', text: 'Impossible de determiner la langue de la serie' });
       return;
     }
 
